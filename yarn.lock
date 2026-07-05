@@ -1467,6 +1467,11 @@ hasown@^2.0.2:
   dependencies:
     function-bind "^1.1.2"
 
+helmet@^8.2.0:
+  version "8.2.0"
+  resolved "https://registry.yarnpkg.com/helmet/-/helmet-8.2.0.tgz#61cb43244de24255a288c2fddb36086074eb1812"
+  integrity sha512-DRgTIUgnWcJ62KyarxxziuqYxKGnR6Rgg19BlbucN/dpmJbl1XOit6qvoOX0ZT+HhWe5OUVhU/a1zpGyc1xA0Q==
+
 http-errors@^2.0.0, http-errors@^2.0.1, http-errors@~2.0.1:
   version "2.0.1"
   resolved "https://registry.yarnpkg.com/http-errors/-/http-errors-2.0.1.tgz#36d2f65bc909c8790018dd36fb4d93da6caae06b"
