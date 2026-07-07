@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DIRECT_URL") // Explicitly forces migrations to use the un-pooled connection
 }
 
 model User {
@@ -31,13 +31,13 @@ model Wallet {
 model Transaction {
   id        String   @id @default(uuid())
   userId    String
-  type      String   // 'credit' or 'debit'
-  category  String   // 'transfer', 'funding', 'airtime', 'data', etc.
-  title     String   // e.g., "Transfer to John Doe"
-  subtitle  String   // e.g., Account number or Bank name
+  type      String   
+  category  String   
+  title     String   
+  subtitle  String   
   amount    Decimal  @db.Decimal(10, 2)
-  status    String   @default("completed") // 'pending', 'completed', 'failed'
-  reference String   @unique // Immutable tracking reference (e.g., TXN-12345)
+  status    String   @default("completed") 
+  reference String   @unique 
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
