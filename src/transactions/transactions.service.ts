@@ -42,15 +42,56 @@ export class TransactionsService {
 
   async fundWallet(userId: string, fundDto: FundDto) {
     const { amount } = fundDto;
-    return await this.prisma.$transaction(async (tx) => {
-      await tx.wallet.update({ where: { userId }, data: { balance: { increment: amount } } });
+    
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found.');
 
-      const txn = await tx.transaction.create({
-        data: { userId, type: 'credit', category: 'funding', title: 'Wallet Top-up', subtitle: 'Card/Bank Funding', amount, status: 'completed', reference: `FND-${Date.now()}` },
+    const reference = `FND-${Date.now()}`;
+
+    try {
+      // Paystack accepts amount in Kobo/Cents (Multiply by 100)
+      const paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: user.email,
+          amount: Math.round(amount * 100),
+          reference,
+          callback_url: 'zannypay://payment-complete', // Deep link back to mobile app
+        }),
       });
 
-      return { success: true, transactionId: txn.id };
-    });
+      const resData = await paystackResponse.json();
+      if (!paystackResponse.ok || !resData.status) {
+        throw new BadRequestException(resData.message || 'Paystack initialization failed');
+      }
+
+      // Log the transaction as 'pending' in the database
+      const txn = await this.prisma.transaction.create({
+        data: {
+          userId,
+          type: 'credit',
+          category: 'funding',
+          title: 'Wallet Top-up',
+          subtitle: 'Paystack Card Checkout',
+          amount,
+          status: 'pending',
+          reference,
+        },
+      });
+
+      return {
+        success: true,
+        transactionId: txn.id,
+        authorizationUrl: resData.data.authorization_url,
+        reference,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message || 'Unable to process payment gateway right now.');
+    }
   }
 
   async payBill(userId: string, billDto: BillDto) {
@@ -71,6 +112,32 @@ export class TransactionsService {
       });
 
       return { success: true, transactionId: txn.id };
+    });
+  }
+
+  // Webhook handler to settle money securely when Paystack signals success
+  async handlePaystackWebhook(reference: string) {
+    return await this.prisma.$transaction(async (tx) => {
+      const transaction = await tx.transaction.findUnique({ where: { reference } });
+      
+      // If transaction doesn't exist or is already finalized, skip to protect ledger integrity
+      if (!transaction || transaction.status === 'completed') {
+        return { handled: true };
+      }
+
+      // 1. Move the transaction status out of pending into completed
+      await tx.transaction.update({
+        where: { reference },
+        data: { status: 'completed' },
+      });
+
+      // 2. Fund the customer's actual wallet balance
+      await tx.wallet.update({
+        where: { userId: transaction.userId },
+        data: { balance: { increment: transaction.amount } },
+      });
+
+      return { success: true };
     });
   }
 }
