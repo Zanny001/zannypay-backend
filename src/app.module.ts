@@ -8,6 +8,8 @@ import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { UserModule } from './user/user.module';
+import { SavingsModule } from './savings/savings.module';
+import { LoansModule } from './loans/loans.module';
 
 @Module({
   imports: [
@@ -35,6 +37,8 @@ import { UserModule } from './user/user.module';
         from: '"ZannyPay Alerts" <noreply@zannypay.com>',
       },
     }),
+    SavingsModule,
+    LoansModule,
   ],
   controllers: [AppController],
   providers: [
