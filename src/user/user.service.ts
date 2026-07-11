@@ -10,9 +10,13 @@ export class UserService {
       where: { id: userId },
       include: {
         wallet: true,
+        savingsGoals: true, // <-- GAP A/B: Hydrate savings
+        loans: true,        // <-- GAP A/B: Hydrate loans
+        cards: true,        // <-- GAP E: Hydrate cards
+        invoices: true,     // <-- GAP E: Hydrate invoices
         transactions: {
           orderBy: { createdAt: 'desc' },
-          take: 50, 
+          take: 50,
         },
       },
     });

@@ -4,6 +4,7 @@ import { MailerService } from '@nestjs-modules/mailer';
 import { TransferDto } from './dto/transfer.dto';
 import { FundDto } from './dto/fund.dto';
 import { BillDto } from './dto/bill.dto';
+import { AirtimeDto } from './dto/airtime.dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -14,8 +15,8 @@ export class TransactionsService {
   ) {}
 
   async transferFunds(userId: string, transferDto: TransferDto) {
-    const { recipientAccount, amount, pin, bank } = transferDto as any;
-
+    const { recipientAccount, amount, pin, bank, note, recipientName } = transferDto;
+    
     return await this.prisma.$transaction(async (tx) => {
       const sender = await tx.user.findUnique({ where: { id: userId }, include: { wallet: true } });
       if (!sender) throw new NotFoundException('Sender account not found.');
@@ -24,10 +25,8 @@ export class TransactionsService {
       if (!isPinValid) throw new UnauthorizedException('Incorrect PIN.');
 
       if (sender.accountNumber === recipientAccount) throw new BadRequestException('Cannot transfer to yourself.');
-
       if (Number(sender.wallet.balance) < amount) throw new BadRequestException('Insufficient funds.');
 
-      // Check if recipient exists internally
       const recipient = await tx.user.findUnique({ where: { accountNumber: recipientAccount }, include: { wallet: true } });
 
       if (recipient) {
@@ -36,33 +35,33 @@ export class TransactionsService {
         await tx.wallet.update({ where: { userId: recipient.id }, data: { balance: { increment: amount } } });
 
         const senderTx = await tx.transaction.create({
-          data: { userId: sender.id, type: 'debit', category: 'transfer', title: `Transfer to ${recipient.name}`, subtitle: recipientAccount, amount, status: 'completed', reference: `TXN-${Date.now()}-D` },
+          data: { userId: sender.id, type: 'debit', category: 'transfer', title: `Transfer to ${recipient.name}`, subtitle: note || recipientAccount, amount, status: 'completed', reference: `TXN-${Date.now()}-D` },
         });
 
         await tx.transaction.create({
-          data: { userId: recipient.id, type: 'credit', category: 'transfer', title: `Transfer from ${sender.name}`, subtitle: sender.accountNumber, amount, status: 'completed', reference: `TXN-${Date.now()}-C` },
+          data: { userId: recipient.id, type: 'credit', category: 'transfer', title: `Transfer from ${sender.name}`, subtitle: note || sender.accountNumber, amount, status: 'completed', reference: `TXN-${Date.now()}-C` },
         });
 
         this.mailerService.sendMail({
           to: sender.email,
           subject: 'Debit Alert: ZannyPay Transfer 💸',
-          html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Transfer Successful</h2><p>You sent <strong>NGN ${amount}</strong> to ${recipient.name} (${recipientAccount}).</p><p>Reference: ${senderTx.reference}</p></div>`,
+          html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Transfer Successful</h2><p>You sent <strong>NGN ${amount}</strong> to ${recipient.name} (${recipientAccount}).</p><p>Note: ${note || 'None'}</p><p>Reference: ${senderTx.reference}</p></div>`,
         }).catch(console.error);
-
+        
         this.mailerService.sendMail({
           to: recipient.email,
           subject: 'Credit Alert: ZannyPay Transfer 🎉',
-          html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Funds Received!</h2><p>You received <strong>NGN ${amount}</strong> from ${sender.name}.</p></div>`,
+          html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Funds Received!</h2><p>You received <strong>NGN ${amount}</strong> from ${sender.name}.</p><p>Note: ${note || 'None'}</p></div>`,
         }).catch(console.error);
-
+        
         return { success: true, transactionId: senderTx.id };
 
       } else {
         // --- EXTERNAL TRANSFER ---
         await tx.wallet.update({ where: { userId: sender.id }, data: { balance: { decrement: amount } } });
-
+        
         const senderTx = await tx.transaction.create({
-          data: { userId: sender.id, type: 'debit', category: 'transfer', title: `Transfer to ${recipientAccount}`, subtitle: bank || 'External Bank', amount, status: 'completed', reference: `TXN-${Date.now()}-EXT` },
+          data: { userId: sender.id, type: 'debit', category: 'transfer', title: `Transfer to ${recipientName || recipientAccount}`, subtitle: bank || 'External Bank', amount, bank, status: 'completed', reference: `TXN-${Date.now()}-EXT` },
         });
 
         this.mailerService.sendMail({
@@ -70,7 +69,7 @@ export class TransactionsService {
           subject: 'Debit Alert: External Transfer 💸',
           html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Transfer Processing</h2><p>You sent <strong>NGN ${amount}</strong> to account ${recipientAccount} at ${bank || 'an external bank'}.</p><p>Reference: ${senderTx.reference}</p></div>`,
         }).catch(console.error);
-
+        
         return { success: true, transactionId: senderTx.id };
       }
     });
@@ -78,12 +77,10 @@ export class TransactionsService {
 
   async fundWallet(userId: string, fundDto: FundDto) {
     const { amount } = fundDto;
-
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found.');
 
     const reference = `FND-${Date.now()}`;
-
     try {
       const paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
         method: 'POST',
@@ -114,41 +111,50 @@ export class TransactionsService {
 
   async payBill(userId: string, billDto: BillDto) {
     const { billerName, category, amount, reference, pin } = billDto as any;
-
     return await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId }, include: { wallet: true } });
       if (!user) throw new NotFoundException('User not found.');
-
-      // 1. Verify PIN
+      
       const isPinValid = await bcrypt.compare(pin, user.pin);
       if (!isPinValid) throw new UnauthorizedException('Incorrect PIN.');
-
-      // 2. Ensure enough balance
+      
       if (Number(user.wallet.balance) < amount) throw new BadRequestException('Insufficient funds.');
 
-      // 3. Deduct money
       await tx.wallet.update({ where: { userId: user.id }, data: { balance: { decrement: amount } } });
 
-      // 4. Record transaction in DB
       const txn = await tx.transaction.create({
-        data: {
-          userId: user.id,
-          type: 'debit',
-          category: category || 'Bill Payment',
-          title: billerName,
-          subtitle: reference ? `Ref: ${reference}` : 'Bill Payment',
-          amount,
-          status: 'completed',
-          reference: `BILL-${Date.now()}`
-        }
+        data: { userId: user.id, type: 'debit', category: category || 'Bill Payment', title: billerName, subtitle: reference ? `Ref: ${reference}` : 'Bill Payment', amount, status: 'completed', reference: `BILL-${Date.now()}` }
       });
 
-      // Optional: Send Email
       this.mailerService.sendMail({
         to: user.email,
         subject: `Bill Payment Receipt: ${billerName} 🧾`,
         html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Payment Successful</h2><p>You paid <strong>NGN ${amount}</strong> for ${billerName}.</p><p>Reference: ${txn.reference}</p></div>`,
       }).catch(console.error);
+
+      return { success: true, transactionId: txn.id };
+    });
+  }
+
+  async buyAirtime(userId: string, airtimeDto: AirtimeDto) {
+    const { phone, amount, provider } = airtimeDto;
+    
+    return await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: userId }, include: { wallet: true } });
+      if (!user) throw new NotFoundException('User not found.');
+
+      if (Number(user.wallet.balance) < amount) throw new BadRequestException('Insufficient funds.');
+
+      // 1. Deduct user balance
+      await tx.wallet.update({ where: { userId: user.id }, data: { balance: { decrement: amount } } });
+
+      // 2. TODO: Call VTPass / Reloadly API here. 
+      // If the API call fails, throw an error to trigger a rollback of the deduction!
+      
+      // 3. Record transaction
+      const txn = await tx.transaction.create({
+        data: { userId: user.id, type: 'debit', category: 'airtime', title: `${provider.toUpperCase()} Airtime`, subtitle: phone, amount, status: 'completed', reference: `AIR-${Date.now()}` }
+      });
 
       return { success: true, transactionId: txn.id };
     });

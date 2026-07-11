@@ -1,12 +1,11 @@
-import { IsString, IsOptional, IsEmail, Length } from 'class-validator';
+import { IsString, IsEmail, Length } from 'class-validator';
 
 export class SignupDto {
   @IsString()
   name: string;
 
   @IsEmail()
-  @IsOptional()
-  email?: string;
+  email: string; // Removed @IsOptional() to align with DB schema
 
   @IsString()
   phone: string;
@@ -15,4 +14,3 @@ export class SignupDto {
   @Length(4, 4)
   pin: string;
 }
-

@@ -3,9 +3,11 @@ import { TransactionsService } from './transactions.service';
 import { TransferDto } from './dto/transfer.dto';
 import { FundDto } from './dto/fund.dto';
 import { BillDto } from './dto/bill.dto';
+import { AirtimeDto } from './dto/airtime.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
-@Controller('transactions')
+// Changed from 'transactions' to 'wallet' to match frontend WalletContext
+@Controller('wallet')
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
@@ -23,24 +25,30 @@ export class TransactionsController {
     return this.transactionsService.fundWallet(userId, fundDto);
   }
 
+  // Changed from 'bills' to 'billpay' to match frontend
   @UseGuards(JwtAuthGuard)
-  @Post('bills')
+  @Post('billpay')
   async payBill(@Req() req, @Body() billDto: BillDto) {
     const userId = req.user.sub || req.user.userId;
     return this.transactionsService.payBill(userId, billDto);
   }
 
-  // PUBLIC ROUTE: No JWT Guard here so Paystack can access it!
+  // NEW: Airtime endpoint
+  @UseGuards(JwtAuthGuard)
+  @Post('airtime')
+  async buyAirtime(@Req() req, @Body() airtimeDto: AirtimeDto) {
+    const userId = req.user.sub || req.user.userId;
+    return this.transactionsService.buyAirtime(userId, airtimeDto);
+  }
+
+  // PUBLIC ROUTE: Paystack Webhook
   @Post('paystack/webhook')
-  @HttpCode(HttpStatus.OK) // Paystack requires an immediate 200 OK response
+  @HttpCode(HttpStatus.OK)
   async handlePaystackWebhook(@Body() body: any) {
-    // Only process successful charges
     if (body.event === 'charge.success' && body.data) {
       const reference = body.data.reference;
       return this.transactionsService.handlePaystackWebhook(reference);
     }
-    
-    // If it's a different event type, just acknowledge receipt
     return { handled: true };
   }
 }
