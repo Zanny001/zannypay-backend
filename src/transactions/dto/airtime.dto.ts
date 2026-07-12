@@ -1,4 +1,4 @@
-import { IsString, IsNumber, Min } from 'class-validator';
+import { IsString, IsNumber, Min, IsOptional } from 'class-validator';
 
 export class AirtimeDto {
   @IsString()
@@ -10,4 +10,11 @@ export class AirtimeDto {
 
   @IsString()
   provider: string;
+
+  @IsString()
+  pin: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
 }
