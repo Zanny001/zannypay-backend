@@ -10,6 +10,8 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { UserModule } from './user/user.module';
 import { SavingsModule } from './savings/savings.module';
 import { LoansModule } from './loans/loans.module';
+import { CardsModule } from './cards/cards.module';       // <-- NEW
+import { InvoicesModule } from './invoices/invoices.module'; // <-- NEW
 
 @Module({
   imports: [
@@ -25,7 +27,7 @@ import { LoansModule } from './loans/loans.module';
     // Global Email Engine
     MailerModule.forRoot({
       transport: {
-        host: process.env.SMTP_HOST || 'smtp.gmail.com', // Replace with SendGrid/Mailgun if needed
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
         port: Number(process.env.SMTP_PORT) || 587,
         secure: false,
         auth: {
@@ -39,6 +41,8 @@ import { LoansModule } from './loans/loans.module';
     }),
     SavingsModule,
     LoansModule,
+    CardsModule,     // <-- NEW
+    InvoicesModule,  // <-- NEW
   ],
   controllers: [AppController],
   providers: [
