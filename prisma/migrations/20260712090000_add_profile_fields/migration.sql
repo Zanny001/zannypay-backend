@@ -1,0 +1,2 @@
+-- This is a dummy migration to resolve the P3009 and P3017 Supabase errors.
+-- The profileImage column already exists in the database.
