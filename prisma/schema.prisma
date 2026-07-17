@@ -14,6 +14,8 @@ model User {
   phone         String        @unique
   pin           String
   accountNumber String        @unique
+  profileImage  String?       // base64 data URI or remote URL, user-uploaded avatar
+  address       String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   wallet        Wallet?
@@ -41,6 +43,7 @@ model Transaction {
   subtitle  String
   amount    Decimal  @db.Decimal(10, 2)
   bank      String?  // <-- GAP C: Added bank field for external transfers
+  recipientAccount String? // the identifier (account number OR phone) the sender targeted — powers the Transfer screen's "Recent" list
   status    String   @default("completed")
   reference String   @unique
   createdAt DateTime @default(now())

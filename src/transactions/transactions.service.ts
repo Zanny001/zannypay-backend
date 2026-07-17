@@ -16,7 +16,7 @@ export class TransactionsService {
 
   async transferFunds(userId: string, transferDto: TransferDto) {
     const { recipientAccount, amount, pin, bank, note, recipientName } = transferDto;
-    
+
     return await this.prisma.$transaction(async (tx) => {
       const sender = await tx.user.findUnique({ where: { id: userId }, include: { wallet: true } });
       if (!sender) throw new NotFoundException('Sender account not found.');
@@ -24,10 +24,18 @@ export class TransactionsService {
       const isPinValid = await bcrypt.compare(pin, sender.pin);
       if (!isPinValid) throw new UnauthorizedException('Incorrect PIN.');
 
-      if (sender.accountNumber === recipientAccount) throw new BadRequestException('Cannot transfer to yourself.');
+      if (sender.accountNumber === recipientAccount || sender.phone === recipientAccount) {
+        throw new BadRequestException('Cannot transfer to yourself.');
+      }
       if (Number(sender.wallet.balance) < amount) throw new BadRequestException('Insufficient funds.');
 
-      const recipient = await tx.user.findUnique({ where: { accountNumber: recipientAccount }, include: { wallet: true } });
+      // The recipient identifier can be either their Zannypay account
+      // number or their registered phone number — phone doubles as a
+      // second, more convenient "account number" for P2P transfers.
+      const recipient = await tx.user.findFirst({
+        where: { OR: [{ accountNumber: recipientAccount }, { phone: recipientAccount }] },
+        include: { wallet: true },
+      });
 
       if (recipient) {
         // --- INTERNAL TRANSFER ---
@@ -35,11 +43,11 @@ export class TransactionsService {
         await tx.wallet.update({ where: { userId: recipient.id }, data: { balance: { increment: amount } } });
 
         const senderTx = await tx.transaction.create({
-          data: { userId: sender.id, type: 'debit', category: 'transfer', title: `Transfer to ${recipient.name}`, subtitle: note || recipientAccount, amount, status: 'completed', reference: `TXN-${Date.now()}-D` },
+          data: { userId: sender.id, type: 'debit', category: 'transfer', title: `Transfer to ${recipient.name}`, subtitle: note || recipientAccount, amount, status: 'completed', reference: `TXN-${Date.now()}-D`, recipientAccount },
         });
 
         await tx.transaction.create({
-          data: { userId: recipient.id, type: 'credit', category: 'transfer', title: `Transfer from ${sender.name}`, subtitle: note || sender.accountNumber, amount, status: 'completed', reference: `TXN-${Date.now()}-C` },
+          data: { userId: recipient.id, type: 'credit', category: 'transfer', title: `Transfer from ${sender.name}`, subtitle: note || sender.accountNumber, amount, status: 'completed', reference: `TXN-${Date.now()}-C`, recipientAccount: sender.accountNumber },
         });
 
         this.mailerService.sendMail({
@@ -47,21 +55,21 @@ export class TransactionsService {
           subject: 'Debit Alert: ZannyPay Transfer 💸',
           html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Transfer Successful</h2><p>You sent <strong>NGN ${amount}</strong> to ${recipient.name} (${recipientAccount}).</p><p>Note: ${note || 'None'}</p><p>Reference: ${senderTx.reference}</p></div>`,
         }).catch(console.error);
-        
+
         this.mailerService.sendMail({
           to: recipient.email,
           subject: 'Credit Alert: ZannyPay Transfer 🎉',
           html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Funds Received!</h2><p>You received <strong>NGN ${amount}</strong> from ${sender.name}.</p><p>Note: ${note || 'None'}</p></div>`,
         }).catch(console.error);
-        
+
         return { success: true, transactionId: senderTx.id };
 
       } else {
         // --- EXTERNAL TRANSFER ---
         await tx.wallet.update({ where: { userId: sender.id }, data: { balance: { decrement: amount } } });
-        
+
         const senderTx = await tx.transaction.create({
-          data: { userId: sender.id, type: 'debit', category: 'transfer', title: `Transfer to ${recipientName || recipientAccount}`, subtitle: bank || 'External Bank', amount, bank, status: 'completed', reference: `TXN-${Date.now()}-EXT` },
+          data: { userId: sender.id, type: 'debit', category: 'transfer', title: `Transfer to ${recipientName || recipientAccount}`, subtitle: bank || 'External Bank', amount, bank, status: 'completed', reference: `TXN-${Date.now()}-EXT`, recipientAccount },
         });
 
         this.mailerService.sendMail({
@@ -69,7 +77,7 @@ export class TransactionsService {
           subject: 'Debit Alert: External Transfer 💸',
           html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Transfer Processing</h2><p>You sent <strong>NGN ${amount}</strong> to account ${recipientAccount} at ${bank || 'an external bank'}.</p><p>Reference: ${senderTx.reference}</p></div>`,
         }).catch(console.error);
-        
+
         return { success: true, transactionId: senderTx.id };
       }
     });
@@ -114,10 +122,10 @@ export class TransactionsService {
     return await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId }, include: { wallet: true } });
       if (!user) throw new NotFoundException('User not found.');
-      
+
       const isPinValid = await bcrypt.compare(pin, user.pin);
       if (!isPinValid) throw new UnauthorizedException('Incorrect PIN.');
-      
+
       if (Number(user.wallet.balance) < amount) throw new BadRequestException('Insufficient funds.');
 
       await tx.wallet.update({ where: { userId: user.id }, data: { balance: { decrement: amount } } });
@@ -137,23 +145,32 @@ export class TransactionsService {
   }
 
   async buyAirtime(userId: string, airtimeDto: AirtimeDto) {
-    const { phone, amount, provider } = airtimeDto;
-    
+    const { phone, amount, provider, pin, type } = airtimeDto;
+    const isData = type === 'data';
+
     return await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId }, include: { wallet: true } });
       if (!user) throw new NotFoundException('User not found.');
+
+      // This was previously missing — every other money-movement endpoint
+      // (transfer, bills) verifies the transaction PIN before debiting the
+      // wallet, but airtime purchases did not.
+      const isPinValid = await bcrypt.compare(pin, user.pin);
+      if (!isPinValid) throw new UnauthorizedException('Incorrect PIN.');
 
       if (Number(user.wallet.balance) < amount) throw new BadRequestException('Insufficient funds.');
 
       // 1. Deduct user balance
       await tx.wallet.update({ where: { userId: user.id }, data: { balance: { decrement: amount } } });
 
-      // 2. TODO: Call VTPass / Reloadly API here. 
+      // 2. TODO: Call VTPass / Reloadly API here.
       // If the API call fails, throw an error to trigger a rollback of the deduction!
-      
-      // 3. Record transaction
+
+      // 3. Record transaction — `type` from the DTO was previously read but
+      // never used, so every purchase (data or airtime) was mislabeled as
+      // "Airtime" in the receipt/history. Now it reflects what was bought.
       const txn = await tx.transaction.create({
-        data: { userId: user.id, type: 'debit', category: 'airtime', title: `${provider.toUpperCase()} Airtime`, subtitle: phone, amount, status: 'completed', reference: `AIR-${Date.now()}` }
+        data: { userId: user.id, type: 'debit', category: isData ? 'data' : 'airtime', title: `${provider.toUpperCase()} ${isData ? 'Data' : 'Airtime'}`, subtitle: phone, amount, status: 'completed', reference: `AIR-${Date.now()}` }
       });
 
       return { success: true, transactionId: txn.id };
