@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Req, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { TransferDto } from './dto/transfer.dto';
 import { FundDto } from './dto/fund.dto';
@@ -39,6 +39,18 @@ export class TransactionsController {
   async buyAirtime(@Req() req, @Body() airtimeDto: AirtimeDto) {
     const userId = req.user.sub || req.user.userId;
     return this.transactionsService.buyAirtime(userId, airtimeDto);
+  }
+
+  // Fallback confirmation path — Paystack webhooks can be slow, unconfigured
+  // in dev/sandbox, or simply never reach an unpublished/local backend. The
+  // frontend calls this right after the checkout browser session returns so
+  // funding doesn't get stuck "Pending" waiting on a webhook that may never
+  // arrive.
+  @UseGuards(JwtAuthGuard)
+  @Get('verify/:reference')
+  async verifyFunding(@Req() req, @Param('reference') reference: string) {
+    const userId = req.user.sub || req.user.userId;
+    return this.transactionsService.verifyFunding(userId, reference);
   }
 
   // PUBLIC ROUTE: Paystack Webhook

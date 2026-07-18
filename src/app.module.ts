@@ -12,6 +12,7 @@ import { SavingsModule } from './savings/savings.module';
 import { LoansModule } from './loans/loans.module';
 import { CardsModule } from './cards/cards.module';       // <-- NEW
 import { InvoicesModule } from './invoices/invoices.module'; // <-- NEW
+import { BudgetsModule } from './budgets/budgets.module'; // <-- NEW
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { InvoicesModule } from './invoices/invoices.module'; // <-- NEW
     LoansModule,
     CardsModule,     // <-- NEW
     InvoicesModule,  // <-- NEW
+    BudgetsModule,   // <-- NEW
   ],
   controllers: [AppController],
   providers: [

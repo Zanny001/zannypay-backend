@@ -177,11 +177,15 @@ export class TransactionsService {
     });
   }
 
-  async handlePaystackWebhook(reference: string) {
+  // Shared by both the webhook and the manual verify fallback below —
+  // whichever one fires first completes the transaction; the other is a
+  // no-op thanks to the status check, so a payment is never credited twice.
+  private async completeFundingTransaction(reference: string) {
     return await this.prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({ where: { reference }, include: { user: true } });
 
-      if (!transaction || transaction.status === 'completed') return { handled: true };
+      if (!transaction) return { success: false, status: 'not_found' };
+      if (transaction.status === 'completed') return { success: true, status: 'completed', alreadyProcessed: true };
 
       await tx.transaction.update({ where: { reference }, data: { status: 'completed' } });
       await tx.wallet.update({ where: { userId: transaction.userId }, data: { balance: { increment: transaction.amount } } });
@@ -192,7 +196,45 @@ export class TransactionsService {
         html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Wallet Top-Up Successful</h2><p>Your wallet was credited with <strong>NGN ${transaction.amount}</strong> via Paystack.</p><p>Reference: ${reference}</p></div>`,
       }).catch(console.error);
 
-      return { success: true };
+      return { success: true, status: 'completed' };
     });
+  }
+
+  async handlePaystackWebhook(reference: string) {
+    const result = await this.completeFundingTransaction(reference);
+    return { handled: true, ...result };
+  }
+
+  // Called by the frontend right after the Paystack checkout browser
+  // session returns. Asks Paystack directly whether the payment actually
+  // succeeded, and if so, completes it immediately rather than waiting on
+  // a webhook that may be delayed or never arrive at all (very common in
+  // local/dev environments without a public HTTPS callback URL registered).
+  async verifyFunding(userId: string, reference: string) {
+    const localTxn = await this.prisma.transaction.findFirst({ where: { reference, userId } });
+    if (!localTxn) throw new NotFoundException('Transaction not found.');
+
+    if (localTxn.status === 'completed') {
+      return { success: true, status: 'completed' };
+    }
+
+    try {
+      const verifyResponse = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      });
+      const verifyData = await verifyResponse.json();
+
+      if (verifyResponse.ok && verifyData.status && verifyData.data?.status === 'success') {
+        const result = await this.completeFundingTransaction(reference);
+        return { success: true, status: result.status };
+      }
+
+      // Paystack hasn't confirmed success yet (still processing, or the
+      // user actually abandoned/failed the checkout) — report the real
+      // state back rather than pretending it worked.
+      return { success: false, status: verifyData.data?.status || 'pending' };
+    } catch (error) {
+      return { success: false, status: 'pending', error: 'Could not reach Paystack to confirm this payment yet.' };
+    }
   }
 }

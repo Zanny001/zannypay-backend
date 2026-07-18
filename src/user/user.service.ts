@@ -17,6 +17,7 @@ export class UserService {
         loans: true,
         cards: true,
         invoices: true,
+        budgets: true,
         transactions: {
           orderBy: { createdAt: 'desc' },
           take: 50,
