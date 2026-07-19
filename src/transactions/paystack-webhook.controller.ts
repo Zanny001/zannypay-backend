@@ -9,14 +9,22 @@ export class PaystackWebhookController {
   @Post('webhook')
   async handleWebhook(@Req() req, @Body() body: any, @Res() res) {
     const signature = req.headers['x-paystack-signature'];
-    
+
     // Crypto validation: ensures the payload came genuinely from Paystack
     const hash = crypto
       .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY || '')
       .update(JSON.stringify(body))
       .digest('hex');
 
-    if (hash !== signature) {
+    // timingSafeEqual requires equal-length buffers, and throws otherwise —
+    // guard that first so a malformed/missing signature header can't crash
+    // the request or leak length information via a thrown error.
+    const hashBuffer = Buffer.from(hash, 'utf8');
+    const signatureBuffer = Buffer.from(String(signature || ''), 'utf8');
+    const signatureMatches =
+      hashBuffer.length === signatureBuffer.length && crypto.timingSafeEqual(hashBuffer, signatureBuffer);
+
+    if (!signatureMatches) {
       throw new BadRequestException('Invalid transaction signature signature token.');
     }
 

@@ -20,7 +20,6 @@ export class AuthService {
     }
 
     const hashedPin = await bcrypt.hash(pin, 10);
-    const accountNumber = '90' + Math.floor(10000000 + Math.random() * 89999999).toString();
     const referralCode = await this.generateUniqueReferralCode();
 
     // A bad/unknown referral code should never block signup — just proceed
@@ -31,21 +30,7 @@ export class AuthService {
       if (referrer) referredBy = referrer.referralCode;
     }
 
-    const newUser = await this.prisma.user.create({
-      data: {
-        name,
-        email,
-        phone,
-        pin: hashedPin,
-        accountNumber,
-        referralCode,
-        referredBy,
-        wallet: {
-          create: { balance: 0.00 },
-        },
-      },
-      include: { wallet: true },
-    });
+    const newUser = await this.createUserRecord({ name, email, phone, hashedPin, referralCode, referredBy });
 
     const payload = { sub: newUser.id, phone: newUser.phone };
     const accessToken = await this.jwtService.signAsync(payload);
@@ -63,6 +48,49 @@ export class AuthService {
         kycTier: newUser.kycTier,
       },
     };
+  }
+
+  // Account numbers are generated randomly with no uniqueness check at
+  // creation time, and a race between two simultaneous signups could both
+  // pass the earlier phone-existence check before either finishes creating.
+  // Retrying on a P2002 conflict (and regenerating the account number each
+  // time) makes signup robust against both without surfacing a raw 500.
+  private async createUserRecord(params: {
+    name: string; email: string; phone: string; hashedPin: string; referralCode: string; referredBy?: string;
+  }) {
+    const { name, email, phone, hashedPin, referralCode, referredBy } = params;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const accountNumber = '90' + Math.floor(10000000 + Math.random() * 89999999).toString();
+      try {
+        return await this.prisma.user.create({
+          data: {
+            name,
+            email,
+            phone,
+            pin: hashedPin,
+            accountNumber,
+            referralCode,
+            referredBy,
+            wallet: { create: { balance: 0.00 } },
+          },
+          include: { wallet: true },
+        });
+      } catch (error) {
+        if (error.code === 'P2002') {
+          const conflictField = error.meta?.target?.[0] || error.meta?.target;
+          if (conflictField === 'accountNumber') continue; // regenerate and retry
+          if (conflictField?.includes?.('phone') || conflictField === 'phone') {
+            throw new ConflictException('A user with this phone number already exists.');
+          }
+          if (conflictField?.includes?.('email') || conflictField === 'email') {
+            throw new ConflictException('A user with this email address already exists.');
+          }
+        }
+        throw error;
+      }
+    }
+    throw new ConflictException('Could not generate a unique account number — please try again.');
   }
 
   private async generateUniqueReferralCode(): Promise<string> {

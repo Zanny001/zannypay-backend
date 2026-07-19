@@ -1,35 +1,26 @@
-import { Controller, Get, Post, Body, Param, Req, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Req, UseGuards } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { TransferDto } from './dto/transfer.dto';
 import { FundDto } from './dto/fund.dto';
 import { BillDto } from './dto/bill.dto';
 import { AirtimeDto } from './dto/airtime.dto';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';                        
 // Changed from 'transactions' to 'wallet' to match frontend WalletContext
 @Controller('wallet')
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
   @UseGuards(JwtAuthGuard)
-  @Post('transfer')
-  async transferFunds(@Req() req, @Body() transferDto: TransferDto) {
-    const userId = req.user.sub || req.user.userId;
-    return this.transactionsService.transferFunds(userId, transferDto);
+  @Post('transfer')                                                             async transferFunds(@Req() req, @Body() transferDto: TransferDto) {
+    const userId = req.user.sub || req.user.userId;                               return this.transactionsService.transferFunds(userId, transferDto);
   }
-
-  @UseGuards(JwtAuthGuard)
+                                                                                @UseGuards(JwtAuthGuard)
   @Post('fund')
-  async fundWallet(@Req() req, @Body() fundDto: FundDto) {
-    const userId = req.user.sub || req.user.userId;
-    return this.transactionsService.fundWallet(userId, fundDto);
-  }
-
-  // Changed from 'bills' to 'billpay' to match frontend
-  @UseGuards(JwtAuthGuard)
-  @Post('billpay')
-  async payBill(@Req() req, @Body() billDto: BillDto) {
-    const userId = req.user.sub || req.user.userId;
+  async fundWallet(@Req() req, @Body() fundDto: FundDto) {                        const userId = req.user.sub || req.user.userId;
+    return this.transactionsService.fundWallet(userId, fundDto);                }
+                                                                                // Changed from 'bills' to 'billpay' to match frontend
+  @UseGuards(JwtAuthGuard)                                                      @Post('billpay')
+  async payBill(@Req() req, @Body() billDto: BillDto) {                           const userId = req.user.sub || req.user.userId;
     return this.transactionsService.payBill(userId, billDto);
   }
 
@@ -53,14 +44,11 @@ export class TransactionsController {
     return this.transactionsService.verifyFunding(userId, reference);
   }
 
-  // PUBLIC ROUTE: Paystack Webhook
-  @Post('paystack/webhook')
-  @HttpCode(HttpStatus.OK)
-  async handlePaystackWebhook(@Body() body: any) {
-    if (body.event === 'charge.success' && body.data) {
-      const reference = body.data.reference;
-      return this.transactionsService.handlePaystackWebhook(reference);
-    }
-    return { handled: true };
-  }
+  // NOTE: The actual Paystack webhook lives at POST /paystack/webhook
+  // (see paystack-webhook.controller.ts), which verifies the HMAC              // signature on every request. A second, unsigned webhook route used to
+  // exist here at /wallet/paystack/webhook — it accepted a bare
+  // {event: 'charge.success', data: {reference}} from anyone, with no auth
+  // and no signature check, meaning any caller could mark any pending          // transaction "completed" and get their wallet credited without ever
+  // paying. It's been removed. If your Paystack Dashboard webhook URL was
+  // pointed at /wallet/paystack/webhook, update it to /paystack/webhook.
 }
