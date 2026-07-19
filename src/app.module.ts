@@ -13,6 +13,8 @@ import { LoansModule } from './loans/loans.module';
 import { CardsModule } from './cards/cards.module';       // <-- NEW
 import { InvoicesModule } from './invoices/invoices.module'; // <-- NEW
 import { BudgetsModule } from './budgets/budgets.module'; // <-- NEW
+import { DisputesModule } from './disputes/disputes.module'; // <-- NEW
+import { ReferralsModule } from './referrals/referrals.module'; // <-- NEW
 
 @Module({
   imports: [
@@ -45,6 +47,8 @@ import { BudgetsModule } from './budgets/budgets.module'; // <-- NEW
     CardsModule,     // <-- NEW
     InvoicesModule,  // <-- NEW
     BudgetsModule,   // <-- NEW
+    DisputesModule,  // <-- NEW
+    ReferralsModule, // <-- NEW
   ],
   controllers: [AppController],
   providers: [

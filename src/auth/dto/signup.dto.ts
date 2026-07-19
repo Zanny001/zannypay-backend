@@ -1,4 +1,4 @@
-import { IsString, IsEmail, Length } from 'class-validator';
+import { IsString, IsEmail, Length, IsOptional } from 'class-validator';
 
 export class SignupDto {
   @IsString()
@@ -13,4 +13,10 @@ export class SignupDto {
   @IsString()
   @Length(4, 4)
   pin: string;
+
+  // The referral code of whoever invited this user, if any. Invalid/unknown
+  // codes are silently ignored rather than blocking signup.
+  @IsOptional()
+  @IsString()
+  referredByCode?: string;
 }

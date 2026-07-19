@@ -18,6 +18,7 @@ export class UserService {
         cards: true,
         invoices: true,
         budgets: true,
+        disputes: true,
         transactions: {
           orderBy: { createdAt: 'desc' },
           take: 50,
@@ -39,11 +40,21 @@ export class UserService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
-    if (!dto.name && !dto.email && !dto.address && !dto.profileImage) {
+    const hasAnyField = Object.values(dto).some((v) => v !== undefined);
+    if (!hasAnyField) {
       throw new BadRequestException('Nothing to update.');
     }
 
     try {
+      const currentUser = await this.prisma.user.findUnique({ where: { id: userId } });
+
+      // Mock, self-reported KYC tier upgrade — there's no real BVN/NIN
+      // verification provider wired up, so completing these fields is
+      // treated as a good-faith Tier 2 upgrade rather than a verified one.
+      const completingIdentityFields =
+        (dto.bvn || currentUser?.bvn) && (dto.nextOfKinName || currentUser?.nextOfKinName) && (dto.nextOfKinPhone || currentUser?.nextOfKinPhone);
+      const shouldUpgradeTier = completingIdentityFields && (currentUser?.kycTier || 1) < 2;
+
       const updated = await this.prisma.user.update({
         where: { id: userId },
         data: {
@@ -51,11 +62,20 @@ export class UserService {
           ...(dto.email !== undefined && { email: dto.email }),
           ...(dto.address !== undefined && { address: dto.address }),
           ...(dto.profileImage !== undefined && { profileImage: dto.profileImage }),
+          ...(dto.dateOfBirth !== undefined && { dateOfBirth: new Date(dto.dateOfBirth) }),
+          ...(dto.gender !== undefined && { gender: dto.gender }),
+          ...(dto.occupation !== undefined && { occupation: dto.occupation }),
+          ...(dto.nationality !== undefined && { nationality: dto.nationality }),
+          ...(dto.maritalStatus !== undefined && { maritalStatus: dto.maritalStatus }),
+          ...(dto.nextOfKinName !== undefined && { nextOfKinName: dto.nextOfKinName }),
+          ...(dto.nextOfKinPhone !== undefined && { nextOfKinPhone: dto.nextOfKinPhone }),
+          ...(dto.bvn !== undefined && { bvn: dto.bvn }),
+          ...(shouldUpgradeTier && { kycTier: 2 }),
         },
       });
 
       const { pin, ...safeUser } = updated;
-      return { success: true, user: safeUser };
+      return { success: true, user: safeUser, tierUpgraded: !!shouldUpgradeTier };
     } catch (error) {
       // Prisma unique constraint violation (email already taken by another account)
       if (error.code === 'P2002') {
