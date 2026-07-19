@@ -29,7 +29,7 @@ model User {
   kycTier         Int      @default(1)
 
   // Referrals
-  referralCode  String?  @unique
+  referralCode  String   @unique
   referredBy    String?  // the referralCode of whoever invited this user, if any
 
   createdAt     DateTime      @default(now())
