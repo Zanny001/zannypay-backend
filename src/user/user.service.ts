@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException, UnauthorizedException
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePinDto } from './dto/change-pin.dto';
+import { ensureReferralCode } from '../common/referral-code.util';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -28,6 +29,11 @@ export class UserService {
 
     if (!user) {
       throw new NotFoundException('User profile not found.');
+    }
+
+    // Self-heals any legacy row still missing a referral code.
+    if (!user.referralCode) {
+      user.referralCode = await ensureReferralCode(this.prisma, user);
     }
 
     const { pin, ...safeUserData } = user;
@@ -70,7 +76,7 @@ export class UserService {
           ...(dto.nextOfKinName !== undefined && { nextOfKinName: dto.nextOfKinName }),
           ...(dto.nextOfKinPhone !== undefined && { nextOfKinPhone: dto.nextOfKinPhone }),
           ...(dto.bvn !== undefined && { bvn: dto.bvn }),
-          ...(shouldUpgradeTier && { kycTier: 2 }),
+          ...(shouldUpgradeTier && { kycTier: 2, rewardPoints: { increment: 100 } }),
         },
       });
 
@@ -83,6 +89,28 @@ export class UserService {
       }
       throw error;
     }
+  }
+
+  // A real, backend-tracked daily check-in — one credit per calendar day,
+  // not a client-side AsyncStorage counter that resets on reinstall.
+  async dailyCheckIn(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found.');
+
+    const now = new Date();
+    const isSameDay = (a: Date, b: Date) =>
+      a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+    if (user.lastCheckIn && isSameDay(new Date(user.lastCheckIn), now)) {
+      return { success: false, alreadyCheckedIn: true, rewardPoints: user.rewardPoints };
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { rewardPoints: { increment: 10 }, lastCheckIn: now },
+    });
+
+    return { success: true, alreadyCheckedIn: false, rewardPoints: updated.rewardPoints };
   }
 
   async changePin(userId: string, dto: ChangePinDto) {

@@ -2,6 +2,7 @@ import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/co
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { SignupDto } from './dto/signup.dto';
+import { generateUniqueReferralCode, ensureReferralCode } from '../common/referral-code.util';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -20,14 +21,21 @@ export class AuthService {
     }
 
     const hashedPin = await bcrypt.hash(pin, 10);
-    const referralCode = await this.generateUniqueReferralCode();
+    const referralCode = await generateUniqueReferralCode(this.prisma);
 
     // A bad/unknown referral code should never block signup — just proceed
     // without crediting anyone.
     let referredBy: string | undefined;
     if (referredByCode) {
       const referrer = await this.prisma.user.findUnique({ where: { referralCode: referredByCode.toUpperCase() } });
-      if (referrer) referredBy = referrer.referralCode;
+      if (referrer) {
+        referredBy = referrer.referralCode;
+        // Real reward points for a real referral — not a cosmetic counter.
+        await this.prisma.user.update({
+          where: { id: referrer.id },
+          data: { rewardPoints: { increment: 50 } },
+        });
+      }
     }
 
     const newUser = await this.createUserRecord({ name, email, phone, hashedPin, referralCode, referredBy });
@@ -93,24 +101,16 @@ export class AuthService {
     throw new ConflictException('Could not generate a unique account number — please try again.');
   }
 
-  private async generateUniqueReferralCode(): Promise<string> {
-    // A handful of collision retries is more than enough at this user scale;
-    // the code space (8 chars, A-Z0-9) is enormous relative to expected volume.
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const code = Math.random().toString(36).slice(2, 10).toUpperCase();
-      const existing = await this.prisma.user.findUnique({ where: { referralCode: code } });
-      if (!existing) return code;
-    }
-    // Extremely unlikely fallback — timestamp-based, still effectively unique.
-    return `Z${Date.now().toString(36).toUpperCase()}`;
-  }
-
   async login(phone: string, plainPin: string) {
     const user = await this.prisma.user.findUnique({ where: { phone } });
     if (!user) throw new UnauthorizedException('No account found.');
 
     const isPinValid = await bcrypt.compare(plainPin, user.pin);
     if (!isPinValid) throw new UnauthorizedException('Incorrect PIN.');
+
+    // Self-heals any legacy row that's still missing a referral code
+    // (rather than crashing or leaving it permanently blank).
+    await ensureReferralCode(this.prisma, user);
 
     const payload = { sub: user.id, phone: user.phone };
     const accessToken = await this.jwtService.signAsync(payload);

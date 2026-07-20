@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Body, UseGuards, Req, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, UseGuards, Req, Param } from '@nestjs/common';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -25,6 +25,12 @@ export class UserController {
   async changePin(@Req() req, @Body() dto: ChangePinDto) {
     const userId = req.user.sub || req.user.userId;
     return this.userService.changePin(userId, dto);
+  }
+
+  @Post('checkin')
+  async dailyCheckIn(@Req() req) {
+    const userId = req.user.sub || req.user.userId;
+    return this.userService.dailyCheckIn(userId);
   }
 
   // Resolves a beneficiary's display name from an account number OR phone

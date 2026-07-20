@@ -27,9 +27,11 @@ model User {
   nextOfKinPhone  String?
   bvn             String?  // stored masked/last-4 only from the client; no real BVN verification provider is wired up
   kycTier         Int      @default(1)
+  rewardPoints    Int      @default(0)
+  lastCheckIn     DateTime?
 
   // Referrals
-  referralCode  String   @unique
+  referralCode  String?  @unique
   referredBy    String?  // the referralCode of whoever invited this user, if any
 
   createdAt     DateTime      @default(now())
