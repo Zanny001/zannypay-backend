@@ -1,0 +1,665 @@
+generator client {
+  provider      = "prisma-client-js"
+  engineType    = "binary"
+  binaryTargets = ["linux-arm64-openssl-3.0.x", "debian-openssl-1.1.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==========================================
+// ADMIN BACKEND — separate identity system from customer Users.
+// Admin accounts never share auth, tokens, or database access patterns
+// with customer accounts.
+// ==========================================
+enum AdminRole {
+  SUPER_ADMIN         // full access, including managing other admins
+  COMPLIANCE_OFFICER  // KYC review, disputes, account freezes
+  FINANCE_OFFICER     // transaction reversals, loan oversight, reconciliation
+  SUPPORT_AGENT       // read-only user lookup, dispute notes — no money-moving actions
+}
+
+model AdminUser {
+  id          String    @id @default(uuid())
+  name        String
+  email       String    @unique
+  password    String    // bcrypt hash — never the plain admin password
+  role        AdminRole @default(SUPPORT_AGENT)
+  isActive    Boolean   @default(true) // deactivated instead of deleted, to preserve the audit trail of past actions
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  auditLogs   AuditLog[]
+
+  // ---------- 2FA (TOTP) ----------
+  twoFactorEnabled       Boolean   @default(false)
+  twoFactorSecret        String?   // AES-256-GCM encrypted at rest (see common/crypto.util.ts) — never stored plaintext
+  twoFactorRecoveryCodes String[]  @default([]) // bcrypt-hashed one-time recovery codes; each is removed from the array once consumed
+
+  // ---------- Brute-force lockout ----------
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  // ---------- Admin's own identity (previously didn't exist at all —
+  // see the master audit, Section 6, "An admin's own identity") ----------
+  photoUrl  String?   // object-storage URL — see storage/storage.service.ts; never base64-in-Postgres
+  phone     String?
+  bio       String?
+
+  sessions      AdminSession[]
+  internalNotes InternalNote[]
+}
+
+// One row per issued admin JWT. Lets a session be revoked (logout, "log out
+// other devices", or a forced revoke by a SUPER_ADMIN) before its natural
+// expiry — something a bare stateless JWT cannot do, and something any
+// SOC 2 / PCI-DSS reviewer will ask how you handle.
+model AdminSession {
+  id         String    @id @default(uuid())
+  adminId    String
+  admin      AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  jti        String    @unique // matches the JWT's `jti` claim
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+}
+
+// DB-backed IP allowlist for admin surfaces, additive to any static
+// ADMIN_IP_ALLOWLIST env entries — lets a SUPER_ADMIN add a new office/VPN
+// range without a redeploy once enforcement is turned on.
+model AdminIpAllowlistEntry {
+  id        String   @id @default(uuid())
+  cidr      String   // e.g. "203.0.113.10/32" or "10.20.0.0/16"
+  label     String?
+  createdBy String?
+  createdAt DateTime @default(now())
+}
+
+// Immutable action log — every admin action that reads sensitive data or
+// changes platform state gets a row here. Never updated or deleted once
+// written; this is the first thing an auditor or regulator asks for.
+// `adminId` is nullable so automated system actions (e.g. the fraud engine
+// auto-freezing an account) are logged too, not just human admin actions.
+model AuditLog {
+  id         String     @id @default(uuid())
+  adminId    String?
+  admin      AdminUser? @relation(fields: [adminId], references: [id])
+  actorType  String     @default("ADMIN") // "ADMIN" | "SYSTEM"
+  action     String     // e.g. "FREEZE_USER", "APPROVE_KYC", "REVERSE_TRANSACTION"
+  targetType String     // e.g. "User", "Transaction", "Dispute", "Loan"
+  targetId   String
+  metadata   Json?      // extra context — reason given, before/after values, etc.
+  ipAddress  String?
+  createdAt  DateTime   @default(now())
+}
+
+// Internal admin collaboration layer — a running notes thread one admin
+// can leave for the next shift ("called the customer, waiting on their
+// bank"), scoped to whatever they were looking at. Deliberately separate
+// from the customer-facing support Conversation model and from
+// Dispute.resolutionNote (which is a single field filled once at
+// resolution, not a thread). `targetType`/`targetId` is a light polymorphic
+// pointer rather than three separate nullable FKs, since the same shape
+// is shared by a User, a Dispute, a Transaction, or a FraudAlert.
+model InternalNote {
+  id         String    @id @default(uuid())
+  targetType String    // 'User' | 'Dispute' | 'Transaction' | 'FraudAlert'
+  targetId   String
+  adminId    String
+  admin      AdminUser @relation(fields: [adminId], references: [id])
+  body       String
+  createdAt  DateTime  @default(now())
+
+  @@index([targetType, targetId, createdAt])
+}
+
+// ==========================================
+// Double-entry ledger — see LedgerService for the full rationale.
+// Wallet.balance and SavingsGoal.saved and Loan.amountRepaid remain as
+// fast-read cached values (every screen in the mobile app and admin
+// dashboard reads them directly, and rewriting every read site to query
+// the ledger live is a much larger, higher-risk change than this pass),
+// but every write to them now happens in the SAME database transaction
+// as a balanced ledger journal that independently proves the movement —
+// so the cache can never drift from its own backing entry without a
+// reconciliation job (LedgerReconciliationRun) catching it.
+// ==========================================
+enum LedgerAccountType {
+  CUSTOMER_WALLET             // one per user — mirrors Wallet.balance
+  CUSTOMER_SAVINGS            // one per user — mirrors the sum of that user's SavingsGoal.saved
+  SYSTEM_LOAN_POOL            // ZannyPay's lending capital — debited on disbursement, credited on repayment
+  SYSTEM_PAYSTACK_CLEARING    // funds received via Paystack, pending settlement to ZannyPay's own bank account (out of scope here)
+  SYSTEM_EXTERNAL_PAYOUT_CLEARING // funds sent to an external bank via a transfer, pending payout confirmation from the processor
+  SYSTEM_BILLER_CLEARING      // funds owed to bill/airtime billers (VTPass/Reloadly-style — see the mock integration note in transactions.service.ts)
+  SYSTEM_OPENING_BALANCE_EQUITY // the counter-account for the one-time opening-balance journal that brings a pre-existing Wallet.balance into the ledger at go-live — see LedgerService.seedOpeningBalances
+  SYSTEM_ADMIN_ADJUSTMENT      // counter-account for AdminService.reverseTransaction — see the comment there for why a reversal is posted as a one-sided adjustment against this account rather than a symmetric invert of the original journal
+  SYSTEM_INTEREST_EXPENSE      // the cost of interest paid out to depositors — debited when SavingsService's daily accrual credits a customer's CUSTOMER_SAVINGS account, the standard accounting treatment for interest expense
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+model LedgerAccount {
+  id        String            @id @default(uuid())
+  type      LedgerAccountType
+  userId    String?           // set only for CUSTOMER_WALLET / CUSTOMER_SAVINGS; null for every SYSTEM_* type
+  user      User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries   LedgerEntry[]
+  createdAt DateTime          @default(now())
+
+  // Enforces "exactly one account per (type, user)" for CUSTOMER_WALLET/
+  // CUSTOMER_SAVINGS, where userId is always a real value — Postgres
+  // unique constraints work normally there. It does NOT do the same job
+  // for SYSTEM_* accounts (userId always null): Postgres treats every
+  // NULL as distinct from every other NULL, so this constraint can't
+  // stop two rows with the same type and a null userId. System-account
+  // uniqueness instead comes from a fixed, deterministic primary key per
+  // type — see SYSTEM_ACCOUNT_IDS in ledger/ledger.service.ts.
+  @@unique([type, userId])
+}
+
+// Append-only by convention (never updated or deleted by application
+// code — a correction is always a new reversing entry, never an edit).
+model LedgerEntry {
+  id              String          @id @default(uuid())
+  ledgerAccountId String
+  ledgerAccount   LedgerAccount   @relation(fields: [ledgerAccountId], references: [id])
+  direction       LedgerDirection
+  amount          Decimal         @db.Decimal(14, 2) // always positive — direction carries the sign
+  journalId       String          // groups every entry belonging to one economic event; a journal's debits and credits always sum to equal amounts, enforced in LedgerService.postJournal before any row is written
+  transactionId   String?         // the customer-facing Transaction this entry corresponds to, if any — lets LedgerService.reverseJournal look up what a reversal needs to invert
+  transaction     Transaction?    @relation(fields: [transactionId], references: [id])
+  memo            String?
+  createdAt       DateTime        @default(now())
+
+  @@index([ledgerAccountId, createdAt])
+  @@index([journalId])
+  @@index([transactionId])
+}
+
+// One row per reconciliation run — see ledger/reconciliation.service.ts.
+// `details` holds the discrepancies found (if any), not a full dump of
+// every account checked; a clean run has an empty array, not a missing row.
+model LedgerReconciliationRun {
+  id                 String   @id @default(uuid())
+  runAt              DateTime @default(now())
+  accountsChecked    Int
+  discrepanciesFound Int
+  details            Json     @default("[]")
+}
+
+// ==========================================
+// Analytics — see AnalyticsService for the full rationale. No third-party
+// vendor is wired up (there's no Mixpanel/Amplitude/Segment write key to
+// configure), so events are captured here as a genuine, working
+// first-party store rather than left unbuilt until one is chosen — many
+// companies run exactly this as their event warehouse permanently, not
+// just as a placeholder. Forwarding to a real vendor later is a small,
+// additive change inside AnalyticsService.track(), not a redesign.
+// ==========================================
+model AnalyticsEvent {
+  id         String   @id @default(uuid())
+  name       String   // e.g. "transfer_completed" — see AnalyticsService's EVENT NAMES comment for the full curated list
+  userId     String?  // null for pre-auth events (e.g. signup funnel steps before an account exists)
+  user       User?    @relation(fields: [userId], references: [id])
+  platform   String   // 'mobile' | 'admin' | 'backend' — 'backend' for events fired server-side with no request-scoped client
+  properties Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  @@index([name, createdAt])
+  @@index([userId, createdAt])
+}
+
+model User {
+  id            String        @id @default(uuid())
+  name          String
+  email         String        @unique
+  phone         String        @unique
+  pin           String
+  accountNumber String        @unique
+  // ZannyPay Business, Phase 1 — a second account number on the same
+  // login, not a separate account/table. A dedicated BusinessProfile model
+  // would be the cleaner shape long-term, but for a strictly 1:1,
+  // same-wallet relationship it's extra indirection with no real benefit
+  // yet; worth revisiting if Business ever needs its own balance or
+  // verification state that doesn't belong on User.
+  businessName          String?
+  businessAccountNumber String? @unique
+  profileImage  String?       // base64 data URI or remote URL, user-uploaded avatar
+  address       String?
+
+  // Premium profile / KYC-lite details
+  dateOfBirth     DateTime?
+  gender          String?
+  occupation      String?
+  nationality     String?
+  maritalStatus   String?
+  nextOfKinName   String?
+  nextOfKinPhone  String?
+
+  // Full BVN/NIN, encrypted at rest (AES-256-GCM — see common/crypto.util.ts,
+  // the same helper used for admin 2FA secrets). Never sent to any client —
+  // customer or admin — in this form. `bvnLast4`/`ninLast4` are plaintext
+  // hint fields for masked display ("•••• •••• 1234"); not sensitive on
+  // their own, and let the UI show *something* without decrypting anything.
+  // The only way to see the real number is POST /user/kyc/reveal, which
+  // requires the user's own transaction PIN and is rate-limited below.
+  bvnEncrypted    String?
+  bvnLast4        String?
+  ninEncrypted    String?
+  ninLast4        String?
+  kycRevealFailedAttempts Int       @default(0)
+  kycRevealLockedUntil    DateTime?
+
+  kycTier         Int      @default(1)
+  kycStatus       String   @default("unverified") // unverified | pending | approved | rejected — set to "approved" only by an admin, not automatically
+  kycRejectionReason String?
+  isFrozen        Boolean  @default(false) // set by an admin; a frozen account can log in and view data but cannot move money
+  rewardPoints    Int      @default(0)
+  lastCheckIn     DateTime?
+  checkInStreak   Int      @default(0) // consecutive days checked in; resets to 1 if a day is missed
+
+  // Referrals
+  referralCode  String?  @unique
+  referredBy    String?  // the referralCode of whoever invited this user, if any
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  wallet        Wallet?
+  transactions  Transaction[]
+  savingsGoals  SavingsGoal[]
+  loans         Loan[]
+  cards         Card[]
+  invoices      Invoice[]
+  budgets       Budget[]
+  disputes      Dispute[]
+  fraudAlerts   FraudAlert[]
+  notifications Notification[]
+  conversations Conversation[]
+  recurringTransfers RecurringTransfer[]
+  beneficiaries Beneficiary[]
+  pushTokens    PushToken[]
+  kycDocuments  KycDocument[]
+  sanctionsScreenings SanctionsScreeningResult[]
+  ledgerAccounts LedgerAccount[]
+  analyticsEvents AnalyticsEvent[]
+}
+
+// Backend-persisted saved recipients — previously device-local only
+// (BeneficiariesScreen.js read/wrote through utils/storage, with no
+// Beneficiary model anywhere in the schema), so a reinstall or new phone
+// silently lost every saved recipient on what's likely the highest-
+// frequency screen in the app. `accountNumber` covers the same three
+// identifier shapes transferFunds already resolves against (personal
+// account number, phone, or business account number) — this table doesn't
+// care which; TransactionsService.resolveRecipient handles that at
+// send-time regardless of how it was saved.
+model Beneficiary {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountNumber String
+  name          String
+  bank          String?   // null for internal ZannyPay recipients; set for a saved external-bank payee
+  nickname      String?
+  isFavorite    Boolean   @default(false)
+  lastPaidAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([userId, accountNumber])
+  @@index([userId])
+}
+
+// One row per registered device push token. A user can have more than one
+// (phone + tablet, or a reinstall that didn't clean up the old token) —
+// PushService fans a send out to every live token for a user and prunes
+// ones Expo/FCM/APNs reports as dead.
+model PushToken {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  platform   String?  // 'ios' | 'android'
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// KYC document/liveness capture — previously the only KYC surface was
+// POST /user/kyc/reveal (a PIN-gated display of already-collected
+// BVN/NIN); there was no endpoint or model anywhere for an ID photo or a
+// selfie/liveness check. `fileUrl` is always an object-storage URL (see
+// storage/storage.service.ts) — a photo ID is exactly the kind of file
+// that must never be stored as base64 in the primary database.
+model KycDocument {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String   // 'id_front' | 'id_back' | 'selfie' | 'proof_of_address'
+  fileUrl       String
+  status        String   @default("pending") // pending | verified | rejected
+  livenessScore Float?   // populated once a real liveness-check provider is wired in — see kyc/kyc-verification.provider.ts
+  reviewedByAdminId String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Sanctions/PEP screening result — self-documented as entirely absent in
+// ADMIN_SECURITY_ADDITIONS.md prior to this. `provider` is deliberately a
+// plain string, not an enum: swapping the real vendor (ComplyAdvantage,
+// Refinitiv World-Check, a Nigerian equivalent) should never require a
+// migration. See screening/sanctions-screening.provider.ts — this table
+// only ever stores a provider's verdict, never re-implements screening
+// logic itself.
+model SanctionsScreeningResult {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider   String
+  isMatch    Boolean  @default(false)
+  matchData  Json?
+  screenedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Dispute {
+  id            String   @id @default(uuid())
+  userId        String
+  transactionId String
+  reason        String
+  details       String?
+  status        String   @default("open") // open | under_review | resolved | rejected
+  resolutionNote String?
+  resolvedByAdminId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Budget {
+  id           String   @id @default(uuid())
+  userId       String
+  category     String   // e.g. "Transfers", "Bills & Utilities", "Airtime", "Savings"
+  monthlyLimit Decimal  @db.Decimal(10, 2)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category])
+}
+
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  balance   Decimal  @default(0.00) @db.Decimal(10, 2)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  category  String
+  title     String
+  subtitle  String
+  amount    Decimal  @db.Decimal(10, 2)
+  bank      String?  // <-- GAP C: Added bank field for external transfers
+  recipientAccount String? // the identifier (account number OR phone) the sender targeted — powers the Transfer screen's "Recent" list
+  status    String   @default("completed")
+  reference String   @unique
+  idempotencyKey String? @unique // client-supplied, so a retried request (network retry, offline-sync replay) is a no-op instead of a second debit
+  flagged   Boolean  @default(false) // flagged for manual review by an admin
+  reversedTransactionId String? // if this row IS a reversal, points at the original transaction it reverses
+  reversalReason String?
+  // Only meaningful on a credit leg for an internal transfer: which of the
+  // *recipient's own* account numbers the sender targeted — 'personal'
+  // (default) or 'business'. Powers the ZannyPay Business revenue view,
+  // which is a filtered read on this same table rather than a separate
+  // ledger.
+  receivedVia String @default("personal")
+  // How many reward points covered part (or all) of this purchase, if any
+  // — amount above stays the full value of what was bought; this is just
+  // the breakdown of how it was paid for. Only ever set on bill/airtime
+  // debits, where redemption is offered.
+  pointsRedeemed Int @default(0)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgerEntries LedgerEntry[] // the balanced journal(s) that actually moved money for this transaction — see LedgerService
+
+  @@index([userId, createdAt]) // hot path for the fraud engine's per-user velocity window scans
+}
+
+model SavingsGoal {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  target    Decimal  @db.Decimal(10, 2)
+  saved     Decimal  @default(0.00) @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Loan {
+  id           String   @id @default(uuid())
+  userId       String
+  principal    Decimal  @db.Decimal(10, 2)
+  fee          Decimal  @db.Decimal(10, 2)
+  totalOwed    Decimal  @db.Decimal(10, 2)
+  amountRepaid Decimal  @default(0.00) @db.Decimal(10, 2)
+  termDays     Int
+  dueDate      DateTime
+  repaid       Boolean  @default(false)
+  issuedAt     DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// <-- GAP E: NEW MODULES -->
+// IMPORTANT: `provider`/`providerRef` are the tokenization-ready seam —
+// see cards/providers/card-issuing.provider.ts and
+// cards/providers/card-linking.provider.ts. The default MOCK provider
+// preserves the exact prior behavior (cardNumber/expiry generated
+// in-process); swapping to a real processor (Stripe Issuing, Marqeta, a
+// licensed local processor for ZannyPay-issued cards; Paystack tokenized
+// saved-authorization for linked external cards) means the service layer
+// starts writing a real `providerRef` instead of a locally-generated PAN,
+// with no schema change required. CVV specifically must NEVER be a stored
+// field, in mock or production form — per PCI-DSS it cannot be persisted
+// anywhere after authorization, full stop. If a user needs to view their
+// CVV, fetch it live from the processor's reveal API at display time;
+// don't reintroduce a `cvv` column here.
+model Card {
+  id         String   @id @default(uuid())
+  userId     String
+  cardNumber String?  @unique // full masked-display number for ZannyPay-issued (mock) cards; null for linked external cards, which only ever carry last4
+  last4      String?  // always populated once a card is created, regardless of provider — the one thing every card face can safely show
+  expiry     String
+  type       String   @default("VIRTUAL")
+  network    String   @default("ZANNYPAY") // 'VISA' | 'MASTERCARD' | 'VERVE' | 'ZANNYPAY' — drives the network-branding logic the audit flagged as entirely missing
+  isFrozen   Boolean  @default(false)
+  isDefault  Boolean  @default(false)
+  isLinkedExternal Boolean @default(false) // true = a linked external debit card (funding source only); false = a ZannyPay-issued card
+  provider   String   @default("mock") // 'mock' | 'stripe_issuing' | 'marqeta' | 'paystack' — which adapter minted/tokenized this card
+  providerRef String? // opaque processor token/reference — never a raw PAN
+  dailyLimit    Decimal @default(500000.00) @db.Decimal(10, 2)
+  monthlyLimit  Decimal @default(2000000.00) @db.Decimal(10, 2)
+  dailySpent    Decimal @default(0.00) @db.Decimal(10, 2)
+  monthlySpent  Decimal @default(0.00) @db.Decimal(10, 2)
+  spendResetAt  DateTime @default(now()) // last time the daily/monthly counters were rolled over
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Invoice {
+  id          String   @id @default(uuid())
+  userId      String
+  clientName  String
+  description String
+  amount      Decimal  @db.Decimal(10, 2)
+  status      String   @default("issued") // issued | paid — deliberately just two states; a "viewed" state would need a public invoice page to fire honestly, which doesn't exist yet
+  paidAt      DateTime?
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ==========================================
+// FRAUD / VELOCITY ENGINE — automated rule evaluation, not manual-only
+// flagging. Rules are DB-configured (thresholds tunable by a SUPER_ADMIN
+// without a redeploy) and run synchronously right after money moves.
+// ==========================================
+enum FraudSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model FraudRule {
+  id          String        @id @default(uuid())
+  name        String        @unique // e.g. "VELOCITY_COUNT", "LARGE_SINGLE_TXN"
+  description String?
+  isEnabled   Boolean       @default(true)
+  severity    FraudSeverity @default(MEDIUM)
+  config      Json          // rule-specific thresholds, e.g. {"windowMinutes":10,"maxCount":5}
+  autoFreeze  Boolean       @default(false) // if true and this rule fires, the user's account is frozen immediately pending review
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model FraudAlert {
+  id                String        @id @default(uuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactionId     String?
+  ruleName          String
+  severity          FraudSeverity
+  details           Json?         // the specific numbers that tripped the rule — what a reviewer needs to judge it
+  status            String        @default("open") // open | confirmed | dismissed
+  reviewedByAdminId String?
+  reviewNote        String?
+  autoFrozeAccount  Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+// ==========================================
+// CUSTOMER NOTIFICATIONS — real backend-driven events (KYC decisions,
+// dispute resolutions, account freeze/unfreeze, chat replies, fraud
+// alerts on the customer's own account). Previously the mobile app's
+// notification feed was built entirely client-side from transaction
+// history, so none of these events ever reached the customer — a KYC
+// rejection, for example, was silent until they happened to reopen the
+// KYC screen themselves.
+// ==========================================
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // 'kyc_approved' | 'kyc_rejected' | 'dispute_resolved' | 'account_frozen' | 'account_unfrozen' | 'chat_reply' | 'fraud_alert'
+  title     String
+  body      String
+  isRead    Boolean  @default(false)
+  metadata  Json?    // e.g. { disputeId, conversationId, reason }
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, isRead])
+}
+
+// ==========================================
+// SUPPORT CHAT — a real conversation thread per customer with support
+// staff, replacing the previous "Support" screen's static email/phone
+// links only. One open Conversation per customer at a time; closing it
+// (resolved) lets a new one start if they need help again later.
+// ==========================================
+model Conversation {
+  id            String        @id @default(uuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject       String        @default("General Support")
+  status        String        @default("open") // open | resolved
+  assignedAdminId String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  messages      ChatMessage[]
+
+  @@index([userId, status])
+  @@index([status, updatedAt])
+}
+
+model ChatMessage {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderType     String       // 'CUSTOMER' | 'ADMIN' | 'AUTO' — 'AUTO' is the automatic first-message acknowledgment (see SupportService.sendCustomerMessage), deliberately distinct from 'ADMIN' so it's never mistaken for a human reply
+  senderAdminId  String?      // set when senderType is 'ADMIN' — which agent sent it
+  body           String?      // optional — a message can be attachment-only (e.g. a photo with no caption)
+  attachmentData     String?  // base64 data-URI, same "no object storage configured yet" pattern already used for User.profileImage — see the size cap in dto/send-message.dto.ts
+  attachmentMimeType String?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// ==========================================
+// RECURRING TRANSFERS — ZannyPay Business Phase 3.
+//
+// Authorization model, deliberately spelled out: the PIN is verified
+// ONCE at creation (proving genuine consent/ownership) and is NEVER
+// stored — not hashed, not encrypted, not at all. Execution later happens
+// with no PIN present, the same way a bank standing order or a card
+// subscription works: authorization happens at setup, not re-proven on
+// every occurrence. The execution path (RecurringTransfersService.
+// executeOne) is never reachable via any HTTP endpoint — only the
+// internal @Cron job calls it. This is a materially different trust
+// model from every other money-movement path in this app, which is why
+// it gets its own model and its own module instead of reusing
+// TransactionsService.transferFunds directly.
+// ==========================================
+model RecurringTransfer {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipientAccount String    // resolved the same way transferFunds resolves one: personal accountNumber, phone, or businessAccountNumber
+  recipientName    String    // captured at creation for display; re-resolved fresh at each execution, never trusted as-is for the actual transfer
+  amount           Decimal   @db.Decimal(10, 2)
+  note             String?
+  frequency        String    // 'daily' | 'weekly' | 'monthly'
+  status           String    @default("active") // active | paused | cancelled
+  nextRunAt        DateTime
+  lastRunAt        DateTime?
+  lastRunStatus    String?   // 'success' | 'failed'
+  lastRunError     String?
+  consecutiveFailures Int    @default(0) // auto-pauses at 3 — see executeOne
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId, status])
+  @@index([status, nextRunAt])
+}

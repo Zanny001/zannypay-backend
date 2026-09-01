@@ -1,0 +1,1 @@
+ALTER TABLE "Transaction" ADD COLUMN "pointsRedeemed" INTEGER NOT NULL DEFAULT 0;
