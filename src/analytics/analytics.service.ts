@@ -11,6 +11,9 @@ import { PrismaService } from '../prisma/prisma.service';
 // ==========================================
 export const ANALYTICS_EVENTS = {
   SIGNUP_COMPLETED: 'signup_completed',
+  PIN_RESET_COMPLETED: 'pin_reset_completed',
+  DATA_EXPORT_COMPLETED: 'data_export_completed',
+  ACCOUNT_DELETED: 'account_deleted',
   KYC_SUBMITTED: 'kyc_submitted',
   KYC_APPROVED: 'kyc_approved',
   KYC_REJECTED: 'kyc_rejected',
@@ -29,7 +32,8 @@ export const ANALYTICS_EVENTS = {
   SUPPORT_CONVERSATION_STARTED: 'support_conversation_started',
 } as const;
 
-export type AnalyticsEventName = (typeof ANALYTICS_EVENTS)[keyof typeof ANALYTICS_EVENTS];
+export type AnalyticsEventName =
+  (typeof ANALYTICS_EVENTS)[keyof typeof ANALYTICS_EVENTS];
 
 @Injectable()
 export class AnalyticsService {
@@ -51,7 +55,14 @@ export class AnalyticsService {
    * an env var like the pattern already used for CARD_LINKING_PROVIDER —
    * not a redesign of anything that calls track().
    */
-  async track(name: AnalyticsEventName, options?: { userId?: string; platform?: 'mobile' | 'admin' | 'backend'; properties?: Record<string, any> }) {
+  async track(
+    name: AnalyticsEventName,
+    options?: {
+      userId?: string;
+      platform?: 'mobile' | 'admin' | 'backend';
+      properties?: Record<string, any>;
+    },
+  ) {
     try {
       await this.prisma.analyticsEvent.create({
         data: {
@@ -62,7 +73,9 @@ export class AnalyticsService {
         },
       });
     } catch (err: any) {
-      this.logger.warn(`Failed to record analytics event "${name}": ${err.message}`);
+      this.logger.warn(
+        `Failed to record analytics event "${name}": ${err.message}`,
+      );
     }
   }
 

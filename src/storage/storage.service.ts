@@ -58,9 +58,11 @@ const MIME_EXTENSION: Record<string, string> = {
 @Injectable()
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
-  private readonly driver = (process.env.STORAGE_DRIVER || 'none').toLowerCase();
+  private readonly driver = (
+    process.env.STORAGE_DRIVER || 'none'
+  ).toLowerCase();
   private readonly localUploadsDir = path.join(process.cwd(), 'uploads');
-  private s3Client: any | null = null;
+  private s3Client: any = null;
   private warnedAboutPassthroughOnce = false;
 
   constructor() {
@@ -80,8 +82,8 @@ export class StorageService {
       endpoint: process.env.S3_ENDPOINT, // set this for R2/Spaces/B2; leave unset for real AWS S3
       forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
       credentials: {
-        accessKeyId: process.env.S3_ACCESS_KEY_ID as string,
-        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY as string,
+        accessKeyId: process.env.S3_ACCESS_KEY_ID,
+        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
       },
     });
     return this.s3Client;
@@ -120,10 +122,14 @@ export class StorageService {
     const key = `${keyPrefix}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}.${decoded.extension}`;
 
     try {
-      if (this.driver === 's3') return await this.putToS3(key, decoded.buffer, decoded.contentType);
-      if (this.driver === 'local') return this.putToLocalDisk(key, decoded.buffer);
+      if (this.driver === 's3')
+        return await this.putToS3(key, decoded.buffer, decoded.contentType);
+      if (this.driver === 'local')
+        return this.putToLocalDisk(key, decoded.buffer);
     } catch (error) {
-      this.logger.error(`Failed to upload to ${this.driver} storage, falling back to inline data URI for this request: ${error?.message || error}`);
+      this.logger.error(
+        `Failed to upload to ${this.driver} storage, falling back to inline data URI for this request: ${error?.message || error}`,
+      );
       return dataUriOrUrl;
     }
 
@@ -137,11 +143,22 @@ export class StorageService {
     return dataUriOrUrl;
   }
 
-  private async putToS3(key: string, buffer: Buffer, contentType: string): Promise<string> {
+  private async putToS3(
+    key: string,
+    buffer: Buffer,
+    contentType: string,
+  ): Promise<string> {
     const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     const client = await this.getS3Client();
-    const bucket = process.env.S3_BUCKET as string;
-    await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: buffer, ContentType: contentType }));
+    const bucket = process.env.S3_BUCKET;
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      }),
+    );
     return this.publicUrlFor(key);
   }
 
@@ -149,12 +166,15 @@ export class StorageService {
     const filePath = path.join(this.localUploadsDir, key);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, buffer);
-    const base = process.env.STORAGE_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 10000}`;
+    const base =
+      process.env.STORAGE_PUBLIC_BASE_URL ||
+      `http://localhost:${process.env.PORT || 10000}`;
     return `${base}/uploads/${key}`;
   }
 
   private publicUrlFor(key: string): string {
-    if (process.env.STORAGE_PUBLIC_BASE_URL) return `${process.env.STORAGE_PUBLIC_BASE_URL}/${key}`;
+    if (process.env.STORAGE_PUBLIC_BASE_URL)
+      return `${process.env.STORAGE_PUBLIC_BASE_URL}/${key}`;
     const bucket = process.env.S3_BUCKET;
     const endpoint = process.env.S3_ENDPOINT;
     if (endpoint) return `${endpoint.replace(/\/$/, '')}/${bucket}/${key}`;
@@ -171,7 +191,10 @@ export class StorageService {
    * URL" is this same backend's own upload endpoint instead — the client
    * code path is identical either way, only the destination differs.
    */
-  async createPresignedUpload(keyPrefix: string, contentType: string): Promise<PresignedUpload> {
+  async createPresignedUpload(
+    keyPrefix: string,
+    contentType: string,
+  ): Promise<PresignedUpload> {
     const extension = MIME_EXTENSION[contentType] || 'bin';
     const key = `${keyPrefix}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}.${extension}`;
 
@@ -179,15 +202,26 @@ export class StorageService {
       const { PutObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
       const client = await this.getS3Client();
-      const command = new PutObjectCommand({ Bucket: process.env.S3_BUCKET, Key: key, ContentType: contentType });
+      const command = new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET,
+        Key: key,
+        ContentType: contentType,
+      });
       const uploadUrl = await getSignedUrl(client, command, { expiresIn: 300 });
-      return { uploadUrl, publicUrl: this.publicUrlFor(key), key, method: 'PUT' };
+      return {
+        uploadUrl,
+        publicUrl: this.publicUrlFor(key),
+        key,
+        method: 'PUT',
+      };
     }
 
     // local/none: no real presigned URL exists, so the client instead
     // POSTs the file body (base64 JSON, same size cap as everywhere else
     // in this API) to this backend's own /storage/local-upload/:key.
-    const base = process.env.STORAGE_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 10000}`;
+    const base =
+      process.env.STORAGE_PUBLIC_BASE_URL ||
+      `http://localhost:${process.env.PORT || 10000}`;
     return {
       uploadUrl: `${base}/api/v1/storage/local-upload/${encodeURIComponent(key)}`,
       publicUrl: `${base}/uploads/${key}`,

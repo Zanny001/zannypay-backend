@@ -50,7 +50,13 @@ export class NotificationsService {
   // to open the app. Push now fires from this same choke point,
   // best-effort, so every future notification type gets it automatically
   // instead of each call site having to remember to add it separately.
-  async create(userId: string, type: NotificationType, title: string, body: string, metadata?: Record<string, any>) {
+  async create(
+    userId: string,
+    type: NotificationType,
+    title: string,
+    body: string,
+    metadata?: Record<string, any>,
+  ) {
     let notification;
     try {
       notification = await this.prisma.notification.create({
@@ -60,7 +66,11 @@ export class NotificationsService {
       // Best-effort, same principle as AuditLogService: a notification
       // failing to write should never roll back or block the actual
       // action (freezing an account, resolving a dispute) that triggered it.
-      console.error('[Notifications] Failed to create notification:', type, error);
+      console.error(
+        '[Notifications] Failed to create notification:',
+        type,
+        error,
+      );
       return null;
     }
 
@@ -68,7 +78,9 @@ export class NotificationsService {
     // off the await chain of the money-moving action that called create(),
     // matching the mailerService.sendMail(...).catch(...) pattern already
     // used elsewhere in this codebase for non-critical side effects.
-    this.pushService.sendToUser(userId, title, body, { type, ...(metadata || {}) }).catch(() => undefined);
+    this.pushService
+      .sendToUser(userId, title, body, { type, ...(metadata || {}) })
+      .catch(() => undefined);
 
     return notification;
   }
@@ -82,7 +94,9 @@ export class NotificationsService {
   }
 
   async unreadCount(userId: string) {
-    const count = await this.prisma.notification.count({ where: { userId, isRead: false } });
+    const count = await this.prisma.notification.count({
+      where: { userId, isRead: false },
+    });
     return { count };
   }
 

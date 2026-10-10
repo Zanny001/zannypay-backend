@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MinLength, MaxLength, Matches, ValidateIf } from 'class-validator';
+import { IsString, IsOptional, MaxLength, Matches } from 'class-validator';
 
 export class SendMessageDto {
   // Optional now — a message can be attachment-only (a photo with no
@@ -17,8 +17,12 @@ export class SendMessageDto {
   // a 1.5MB image, generous for a chat attachment, not for a photo album.
   @IsOptional()
   @IsString()
-  @MaxLength(2_800_000, { message: 'Attachment is too large — please choose a smaller image.' })
-  @Matches(/^data:image\/(jpeg|jpg|png|webp);base64,/, { message: 'attachmentData must be a base64 image data URI.' })
+  @MaxLength(2_800_000, {
+    message: 'Attachment is too large — please choose a smaller image.',
+  })
+  @Matches(/^data:image\/(jpeg|jpg|png|webp);base64,/, {
+    message: 'attachmentData must be a base64 image data URI.',
+  })
   attachmentData?: string;
 
   @IsOptional()

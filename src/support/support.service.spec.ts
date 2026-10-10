@@ -10,12 +10,16 @@ describe('SupportService.sendCustomerMessage — auto-reply', () => {
 
   beforeEach(() => {
     prisma = {
-      conversation: { findFirst: jest.fn().mockResolvedValue(conversation), create: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+      conversation: {
+        findFirst: jest.fn().mockResolvedValue(conversation),
+        create: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+      },
       chatMessage: { findMany: jest.fn(), create: jest.fn() },
     };
     storageService = { storeImage: jest.fn() };
     service = new SupportService(
-      prisma as any,
+      prisma,
       { create: jest.fn() } as any, // NotificationsService
       { record: jest.fn() } as any, // AuditLogService
       storageService as any,
@@ -24,20 +28,35 @@ describe('SupportService.sendCustomerMessage — auto-reply', () => {
   });
 
   it('rejects an empty message with no attachment', async () => {
-    await expect(service.sendCustomerMessage('user-1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.sendCustomerMessage('user-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('sends the automatic acknowledgment when this is genuinely the first message in the conversation', async () => {
     prisma.chatMessage.findMany.mockResolvedValue([]); // no prior messages at all
     prisma.chatMessage.create
-      .mockResolvedValueOnce({ id: 'msg-1', senderType: 'CUSTOMER', body: 'Hi, I need help' })
-      .mockResolvedValueOnce({ id: 'msg-2', senderType: 'AUTO', body: 'Thanks for reaching out to ZannyPay Support!' });
+      .mockResolvedValueOnce({
+        id: 'msg-1',
+        senderType: 'CUSTOMER',
+        body: 'Hi, I need help',
+      })
+      .mockResolvedValueOnce({
+        id: 'msg-2',
+        senderType: 'AUTO',
+        body: 'Thanks for reaching out to ZannyPay Support!',
+      });
 
-    const result = await service.sendCustomerMessage('user-1', 'Hi, I need help');
+    const result = await service.sendCustomerMessage(
+      'user-1',
+      'Hi, I need help',
+    );
 
     expect(result.autoReply).not.toBeNull();
     expect(prisma.chatMessage.create).toHaveBeenCalledTimes(2);
-    expect(prisma.chatMessage.create.mock.calls[1][0].data.senderType).toBe('AUTO');
+    expect(prisma.chatMessage.create.mock.calls[1][0].data.senderType).toBe(
+      'AUTO',
+    );
   });
 
   it('does NOT send another acknowledgment on a follow-up message in the same open conversation', async () => {
@@ -45,7 +64,11 @@ describe('SupportService.sendCustomerMessage — auto-reply', () => {
       { id: 'msg-1', senderType: 'CUSTOMER', body: 'Hi' },
       { id: 'msg-2', senderType: 'AUTO', body: 'Thanks for reaching out...' },
     ]);
-    prisma.chatMessage.create.mockResolvedValue({ id: 'msg-3', senderType: 'CUSTOMER', body: 'Any update?' });
+    prisma.chatMessage.create.mockResolvedValue({
+      id: 'msg-3',
+      senderType: 'CUSTOMER',
+      body: 'Any update?',
+    });
 
     const result = await service.sendCustomerMessage('user-1', 'Any update?');
 
@@ -57,11 +80,23 @@ describe('SupportService.sendCustomerMessage — auto-reply', () => {
     prisma.chatMessage.findMany.mockResolvedValue([
       { id: 'msg-1', senderType: 'CUSTOMER', body: 'Hi' },
       { id: 'msg-2', senderType: 'AUTO', body: 'Thanks for reaching out...' },
-      { id: 'msg-3', senderType: 'ADMIN', senderAdminId: 'admin-1', body: 'Hi, how can I help?' },
+      {
+        id: 'msg-3',
+        senderType: 'ADMIN',
+        senderAdminId: 'admin-1',
+        body: 'Hi, how can I help?',
+      },
     ]);
-    prisma.chatMessage.create.mockResolvedValue({ id: 'msg-4', senderType: 'CUSTOMER', body: 'One more thing' });
+    prisma.chatMessage.create.mockResolvedValue({
+      id: 'msg-4',
+      senderType: 'CUSTOMER',
+      body: 'One more thing',
+    });
 
-    const result = await service.sendCustomerMessage('user-1', 'One more thing');
+    const result = await service.sendCustomerMessage(
+      'user-1',
+      'One more thing',
+    );
 
     expect(result.autoReply).toBeNull();
     expect(prisma.chatMessage.create).toHaveBeenCalledTimes(1);
@@ -81,10 +116,17 @@ describe('SupportService.sendCustomerMessage — auto-reply', () => {
     prisma.conversation.findFirst.mockResolvedValue(conversation);
     prisma.chatMessage.findMany.mockResolvedValue([]);
     prisma.chatMessage.create
-      .mockResolvedValueOnce({ id: 'msg-1', senderType: 'CUSTOMER', body: 'First real message' })
+      .mockResolvedValueOnce({
+        id: 'msg-1',
+        senderType: 'CUSTOMER',
+        body: 'First real message',
+      })
       .mockResolvedValueOnce({ id: 'msg-2', senderType: 'AUTO' });
 
-    const result = await service.sendCustomerMessage('user-1', 'First real message');
+    const result = await service.sendCustomerMessage(
+      'user-1',
+      'First real message',
+    );
 
     expect(prisma.conversation.create).not.toHaveBeenCalled(); // confirms this is the pre-created-by-polling scenario
     expect(result.autoReply).not.toBeNull();

@@ -8,6 +8,6 @@ import { BeneficiariesModule } from '../beneficiaries/beneficiaries.module';
 @Module({
   imports: [FraudModule, BeneficiariesModule],
   controllers: [TransactionsController, PaystackWebhookController],
-  providers: [TransactionsService]
+  providers: [TransactionsService],
 })
 export class TransactionsModule {}

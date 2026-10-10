@@ -1,4 +1,14 @@
-import { Controller, Post, Get, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminJwtAuthGuard } from './admin-jwt-auth.guard';
@@ -37,7 +47,11 @@ export class AdminAuthController {
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('2fa/verify')
   async verifyTwoFactor(@Req() req, @Body() dto: Verify2faDto) {
-    return this.adminAuthService.verifyTwoFactor(dto, req.ip, req.headers['user-agent']);
+    return this.adminAuthService.verifyTwoFactor(
+      dto,
+      req.ip,
+      req.headers['user-agent'],
+    );
   }
 
   // ---- Everything below requires an already-authenticated full session ----
@@ -57,13 +71,24 @@ export class AdminAuthController {
   @UseGuards(AdminJwtAuthGuard)
   @Post('2fa/disable')
   async disableTwoFactor(@Req() req, @Body() dto: Disable2faDto) {
-    return this.adminAuthService.disableTwoFactor(req.user.adminId, dto, req.ip);
+    return this.adminAuthService.disableTwoFactor(
+      req.user.adminId,
+      dto,
+      req.ip,
+    );
   }
 
   @UseGuards(AdminJwtAuthGuard)
   @Post('2fa/recovery-codes/regenerate')
-  async regenerateRecoveryCodes(@Req() req, @Body() dto: RegenerateRecoveryCodesDto) {
-    return this.adminAuthService.regenerateRecoveryCodes(req.user.adminId, dto, req.ip);
+  async regenerateRecoveryCodes(
+    @Req() req,
+    @Body() dto: RegenerateRecoveryCodesDto,
+  ) {
+    return this.adminAuthService.regenerateRecoveryCodes(
+      req.user.adminId,
+      dto,
+      req.ip,
+    );
   }
 
   @UseGuards(AdminJwtAuthGuard)
@@ -105,6 +130,11 @@ export class AdminAuthController {
   @UseGuards(AdminJwtAuthGuard)
   @Patch('password')
   async changePassword(@Req() req, @Body() dto: ChangeAdminPasswordDto) {
-    return this.adminAuthService.changePassword(req.user.adminId, dto, req.user.jti, req.ip);
+    return this.adminAuthService.changePassword(
+      req.user.adminId,
+      dto,
+      req.user.jti,
+      req.ip,
+    );
   }
 }

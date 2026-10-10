@@ -1,4 +1,12 @@
-import { Injectable, NotFoundException, ConflictException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ConflictException,
+  UnauthorizedException,
+  BadRequestException,
+} from '@nestjs/common';
+import { MailerService } from '@nestjs-modules/mailer';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePinDto } from './dto/change-pin.dto';
@@ -7,14 +15,23 @@ import { ensureReferralCode } from '../common/referral-code.util';
 import { encryptCustomerPII, decryptCustomerPII } from '../common/crypto.util';
 import { StorageService } from '../storage/storage.service';
 import { SavingsService } from '../savings/savings.service';
-import * as bcrypt from 'bcryptjs';
+import {
+  AnalyticsService,
+  ANALYTICS_EVENTS,
+} from '../analytics/analytics.service';
+import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class UserService {
+  private readonly logger = new Logger(UserService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly savingsService: SavingsService,
+    private readonly mailerService: MailerService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   async getUserDashboard(userId: string) {
@@ -53,7 +70,8 @@ export class UserService {
       // real, backend-sourced value instead of the hardcoded mobile
       // constant it used to silently fall back to.
       savingsApy: SavingsService.ANNUAL_INTEREST_RATE,
-      lastInterestEarned: await this.savingsService.getLastInterestEarned(userId),
+      lastInterestEarned:
+        await this.savingsService.getLastInterestEarned(userId),
     };
   }
 
@@ -64,7 +82,9 @@ export class UserService {
     }
 
     try {
-      const currentUser = await this.prisma.user.findUnique({ where: { id: userId } });
+      const currentUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
 
       // Submitting identity fields moves the user into the KYC review
       // queue — it no longer auto-grants Tier 2. An admin (Compliance
@@ -72,9 +92,13 @@ export class UserService {
       // via POST /admin/kyc/:userId/decide, which is what awards the
       // Tier 2 upgrade and the +100 reward points.
       const completingIdentityFields =
-        (dto.bvn || currentUser?.bvnEncrypted) && (dto.nextOfKinName || currentUser?.nextOfKinName) && (dto.nextOfKinPhone || currentUser?.nextOfKinPhone);
+        (dto.bvn || currentUser?.bvnEncrypted) &&
+        (dto.nextOfKinName || currentUser?.nextOfKinName) &&
+        (dto.nextOfKinPhone || currentUser?.nextOfKinPhone);
       const shouldSubmitForReview =
-        completingIdentityFields && currentUser?.kycStatus !== 'approved' && currentUser?.kycStatus !== 'pending';
+        completingIdentityFields &&
+        currentUser?.kycStatus !== 'approved' &&
+        currentUser?.kycStatus !== 'pending';
 
       // Master audit, Critical #2: profile images were base64 data-URIs
       // stored directly in Postgres. storeImage() uploads to object
@@ -86,7 +110,12 @@ export class UserService {
       // values. If no STORAGE_DRIVER is configured, storeImage() safely
       // falls back to returning the base64 unchanged.
       const resolvedProfileImage =
-        dto.profileImage !== undefined ? await this.storageService.storeImage(dto.profileImage, `avatars/${userId}`) : undefined;
+        dto.profileImage !== undefined
+          ? await this.storageService.storeImage(
+              dto.profileImage,
+              `avatars/${userId}`,
+            )
+          : undefined;
 
       const updated = await this.prisma.user.update({
         where: { id: userId },
@@ -94,21 +123,43 @@ export class UserService {
           ...(dto.name !== undefined && { name: dto.name }),
           ...(dto.email !== undefined && { email: dto.email }),
           ...(dto.address !== undefined && { address: dto.address }),
-          ...(resolvedProfileImage !== undefined && { profileImage: resolvedProfileImage }),
-          ...(dto.dateOfBirth !== undefined && { dateOfBirth: new Date(dto.dateOfBirth) }),
+          ...(resolvedProfileImage !== undefined && {
+            profileImage: resolvedProfileImage,
+          }),
+          ...(dto.dateOfBirth !== undefined && {
+            dateOfBirth: new Date(dto.dateOfBirth),
+          }),
           ...(dto.gender !== undefined && { gender: dto.gender }),
           ...(dto.occupation !== undefined && { occupation: dto.occupation }),
-          ...(dto.nationality !== undefined && { nationality: dto.nationality }),
-          ...(dto.maritalStatus !== undefined && { maritalStatus: dto.maritalStatus }),
-          ...(dto.nextOfKinName !== undefined && { nextOfKinName: dto.nextOfKinName }),
-          ...(dto.nextOfKinPhone !== undefined && { nextOfKinPhone: dto.nextOfKinPhone }),
-          ...(dto.bvn !== undefined && { bvnEncrypted: encryptCustomerPII(dto.bvn), bvnLast4: dto.bvn.slice(-4) }),
-          ...(dto.nin !== undefined && { ninEncrypted: encryptCustomerPII(dto.nin), ninLast4: dto.nin.slice(-4) }),
+          ...(dto.nationality !== undefined && {
+            nationality: dto.nationality,
+          }),
+          ...(dto.maritalStatus !== undefined && {
+            maritalStatus: dto.maritalStatus,
+          }),
+          ...(dto.nextOfKinName !== undefined && {
+            nextOfKinName: dto.nextOfKinName,
+          }),
+          ...(dto.nextOfKinPhone !== undefined && {
+            nextOfKinPhone: dto.nextOfKinPhone,
+          }),
+          ...(dto.bvn !== undefined && {
+            bvnEncrypted: encryptCustomerPII(dto.bvn),
+            bvnLast4: dto.bvn.slice(-4),
+          }),
+          ...(dto.nin !== undefined && {
+            ninEncrypted: encryptCustomerPII(dto.nin),
+            ninLast4: dto.nin.slice(-4),
+          }),
           ...(shouldSubmitForReview && { kycStatus: 'pending' }),
         },
       });
 
-      return { success: true, user: this.sanitizeUser(updated), submittedForReview: !!shouldSubmitForReview };
+      return {
+        success: true,
+        user: this.sanitizeUser(updated),
+        submittedForReview: !!shouldSubmitForReview,
+      };
     } catch (error) {
       // Prisma unique constraint violation (email already taken by another account)
       if (error.code === 'P2002') {
@@ -118,12 +169,187 @@ export class UserService {
     }
   }
 
+  // ==========================================
+  // Privacy & Account (NDPR/GDPR portability + erasure, and App Store /
+  // Play policy which reject apps with account creation but no in-app
+  // deletion path). Backs the mobile app's AccountDataScreen — which was
+  // built against this contract and previously fell back to a support
+  // route because these endpoints didn't exist yet.
+  // ==========================================
+
+  // Data portability: everything we hold about the user, in one JSON
+  // document. Emailed to the address on file when SMTP is configured
+  // (keeps the full export off the API response path); returned inline
+  // as a fallback so the feature works in environments without mail.
+  // The PIN hash and encrypted BVN/NIN blobs are never included — the
+  // *Last4 hint fields are.
+  async exportMyData(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        wallet: true,
+        transactions: { orderBy: { createdAt: 'desc' } },
+        savingsGoals: true,
+        loans: true,
+        cards: true,
+        invoices: true,
+        budgets: true,
+        disputes: true,
+        recurringTransfers: true,
+        beneficiaries: true,
+      },
+    });
+    if (!user || user.deletedAt)
+      throw new NotFoundException('User profile not found.');
+
+    const exportPayload = {
+      exportedAt: new Date().toISOString(),
+      profile: this.sanitizeUser(user),
+      wallet: user.wallet
+        ? {
+            accountNumber: user.accountNumber,
+            balance: Number(user.wallet.balance),
+            currency: 'NGN',
+          }
+        : null,
+      transactions: user.transactions,
+      savingsGoals: user.savingsGoals,
+      loans: user.loans,
+      // Cards export with the masked display number / last4 only — the
+      // full PAN never leaves the server in any form.
+      cards: user.cards.map(({ providerRef, ...card }) => card),
+      invoices: user.invoices,
+      budgets: user.budgets,
+      disputes: user.disputes,
+      recurringTransfers: user.recurringTransfers,
+      beneficiaries: user.beneficiaries,
+    };
+
+    try {
+      await this.mailerService.sendMail({
+        to: user.email,
+        subject: 'Your ZannyPay data export',
+        text: 'Attached is a full export of the data ZannyPay holds about your account (JSON format).',
+        attachments: [
+          {
+            filename: 'zannypay-data-export.json',
+            content: JSON.stringify(exportPayload, null, 2),
+          },
+        ],
+      });
+      await this.analyticsService.track(
+        ANALYTICS_EVENTS.DATA_EXPORT_COMPLETED,
+        { userId },
+      );
+      return { delivered: 'email' };
+    } catch (error) {
+      this.logger.warn(
+        `Data-export email failed for user ${userId} — returning export inline instead: ${error.message}`,
+      );
+      await this.analyticsService.track(
+        ANALYTICS_EVENTS.DATA_EXPORT_COMPLETED,
+        { userId, properties: { delivered: 'inline' } },
+      );
+      return { delivered: 'inline', data: exportPayload };
+    }
+  }
+
+  // Erasure: anonymizes the account in place. The row is deliberately
+  // NOT hard-deleted — CBN record-retention rules require keeping
+  // transaction history, every related table cascades from User (a hard
+  // delete would silently wipe the ledger accounts and journal entries
+  // the books balance on), and NDPR permits retaining what financial
+  // regulation requires. What erasure means here: every piece of PII is
+  // destroyed or tombstoned, login becomes impossible (phone and PIN are
+  // replaced with values nobody knows), money movement is frozen, and
+  // the phone number is freed so the person can sign up again later.
+  //
+  // Refused while money is still in motion: a wallet balance must be
+  // withdrawn first, and an outstanding loan must be repaid — deleting
+  // either away would strand real funds with no owner.
+  async deleteMyAccount(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { wallet: true, loans: true },
+    });
+    if (!user || user.deletedAt)
+      throw new NotFoundException('User profile not found.');
+
+    const balance = user.wallet?.balance ? Number(user.wallet.balance) : 0;
+    if (balance > 0) {
+      throw new BadRequestException(
+        'Your wallet still holds a balance — withdraw or transfer it before deleting your account.',
+      );
+    }
+    if (user.loans.some((loan) => !loan.repaid)) {
+      throw new BadRequestException(
+        'You have an outstanding loan — repay it before deleting your account.',
+      );
+    }
+
+    const tombstone = `deleted-${user.id}`;
+    const unknowablePin = await bcrypt.hash(
+      crypto.randomBytes(32).toString('hex'),
+      10,
+    );
+
+    await this.prisma.$transaction([
+      // Device push tokens and any outstanding OTP codes for the old
+      // number are PII-adjacent and useless after erasure.
+      this.prisma.pushToken.deleteMany({ where: { userId } }),
+      this.prisma.otpCode.deleteMany({ where: { target: user.phone } }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          name: 'Deleted User',
+          // Unique tombstones keep the unique constraints satisfied while
+          // freeing the real values for a future signup.
+          email: `${tombstone}@deleted.zannypay.local`,
+          phone: tombstone,
+          pin: unknowablePin,
+          businessName: null,
+          businessAccountNumber: null,
+          profileImage: null,
+          address: null,
+          dateOfBirth: null,
+          gender: null,
+          occupation: null,
+          nationality: null,
+          maritalStatus: null,
+          nextOfKinName: null,
+          nextOfKinPhone: null,
+          bvnEncrypted: null,
+          bvnLast4: null,
+          ninEncrypted: null,
+          ninLast4: null,
+          kycRevealFailedAttempts: 0,
+          kycRevealLockedUntil: null,
+          referralCode: null,
+          isFrozen: true,
+          deletedAt: new Date(),
+        },
+      }),
+    ]);
+
+    await this.analyticsService.track(ANALYTICS_EVENTS.ACCOUNT_DELETED, {
+      userId,
+    });
+    return { deleted: true };
+  }
+
   // Strips fields that should never reach a client response: the PIN hash,
   // and the raw encrypted BVN/NIN blobs (meaningless to the client anyway,
   // but there's no reason for ciphertext to leave the server either — the
   // *Last4 hint fields are what the UI actually displays).
   private sanitizeUser<T extends Record<string, any>>(user: T) {
-    const { pin, bvnEncrypted, ninEncrypted, kycRevealFailedAttempts, kycRevealLockedUntil, ...safeUser } = user;
+    const {
+      pin,
+      bvnEncrypted,
+      ninEncrypted,
+      kycRevealFailedAttempts,
+      kycRevealLockedUntil,
+      ...safeUser
+    } = user;
     return safeUser;
   }
 
@@ -141,32 +367,54 @@ export class UserService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found.');
 
-    if (user.kycRevealLockedUntil && user.kycRevealLockedUntil.getTime() > Date.now()) {
-      const minutesLeft = Math.ceil((user.kycRevealLockedUntil.getTime() - Date.now()) / 60000);
-      throw new UnauthorizedException(`Too many attempts. Try again in ${minutesLeft} minute(s).`);
+    if (
+      user.kycRevealLockedUntil &&
+      user.kycRevealLockedUntil.getTime() > Date.now()
+    ) {
+      const minutesLeft = Math.ceil(
+        (user.kycRevealLockedUntil.getTime() - Date.now()) / 60000,
+      );
+      throw new UnauthorizedException(
+        `Too many attempts. Try again in ${minutesLeft} minute(s).`,
+      );
     }
 
     const isPinValid = await bcrypt.compare(dto.pin, user.pin);
     if (!isPinValid) {
       const attempts = user.kycRevealFailedAttempts + 1;
-      const data: { kycRevealFailedAttempts: number; kycRevealLockedUntil?: Date } = { kycRevealFailedAttempts: attempts };
+      const data: {
+        kycRevealFailedAttempts: number;
+        kycRevealLockedUntil?: Date;
+      } = { kycRevealFailedAttempts: attempts };
       if (attempts >= UserService.REVEAL_LOCKOUT_THRESHOLD) {
-        data.kycRevealLockedUntil = new Date(Date.now() + UserService.REVEAL_LOCKOUT_MINUTES * 60 * 1000);
+        data.kycRevealLockedUntil = new Date(
+          Date.now() + UserService.REVEAL_LOCKOUT_MINUTES * 60 * 1000,
+        );
       }
       await this.prisma.user.update({ where: { id: userId }, data });
       throw new UnauthorizedException('Incorrect PIN.');
     }
 
     if (user.kycRevealFailedAttempts > 0 || user.kycRevealLockedUntil) {
-      await this.prisma.user.update({ where: { id: userId }, data: { kycRevealFailedAttempts: 0, kycRevealLockedUntil: null } });
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { kycRevealFailedAttempts: 0, kycRevealLockedUntil: null },
+      });
     }
 
-    const encrypted = dto.field === 'bvn' ? user.bvnEncrypted : user.ninEncrypted;
+    const encrypted =
+      dto.field === 'bvn' ? user.bvnEncrypted : user.ninEncrypted;
     if (!encrypted) {
-      throw new BadRequestException(`No ${dto.field.toUpperCase()} is on file for this account.`);
+      throw new BadRequestException(
+        `No ${dto.field.toUpperCase()} is on file for this account.`,
+      );
     }
 
-    return { success: true, field: dto.field, value: decryptCustomerPII(encrypted) };
+    return {
+      success: true,
+      field: dto.field,
+      value: decryptCustomerPII(encrypted),
+    };
   }
 
   // A real, backend-tracked daily check-in — one credit per calendar day,
@@ -180,7 +428,9 @@ export class UserService {
 
     const now = new Date();
     const isSameDay = (a: Date, b: Date) =>
-      a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate();
     const isYesterday = (a: Date, b: Date) => {
       const yesterday = new Date(b);
       yesterday.setDate(yesterday.getDate() - 1);
@@ -188,24 +438,43 @@ export class UserService {
     };
 
     if (user.lastCheckIn && isSameDay(new Date(user.lastCheckIn), now)) {
-      return { success: false, alreadyCheckedIn: true, rewardPoints: user.rewardPoints, streak: user.checkInStreak };
+      return {
+        success: false,
+        alreadyCheckedIn: true,
+        rewardPoints: user.rewardPoints,
+        streak: user.checkInStreak,
+      };
     }
 
     // Checking in the day right after the last one extends the streak;
     // any gap (or a first-ever check-in) starts a fresh one at 1.
-    const newStreak = user.lastCheckIn && isYesterday(new Date(user.lastCheckIn), now) ? user.checkInStreak + 1 : 1;
+    const newStreak =
+      user.lastCheckIn && isYesterday(new Date(user.lastCheckIn), now)
+        ? user.checkInStreak + 1
+        : 1;
 
     let bonus = 0;
     let milestone: number | null = null;
-    if (newStreak === 7) { bonus = 50; milestone = 7; }
-    else if (newStreak === 14) { bonus = 100; milestone = 14; }
-    else if (newStreak > 0 && newStreak % 30 === 0) { bonus = 250; milestone = newStreak; }
+    if (newStreak === 7) {
+      bonus = 50;
+      milestone = 7;
+    } else if (newStreak === 14) {
+      bonus = 100;
+      milestone = 14;
+    } else if (newStreak > 0 && newStreak % 30 === 0) {
+      bonus = 250;
+      milestone = newStreak;
+    }
 
     const pointsEarned = 10 + bonus;
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
-      data: { rewardPoints: { increment: pointsEarned }, lastCheckIn: now, checkInStreak: newStreak },
+      data: {
+        rewardPoints: { increment: pointsEarned },
+        lastCheckIn: now,
+        checkInStreak: newStreak,
+      },
     });
 
     return {
@@ -223,10 +492,14 @@ export class UserService {
     if (!user) throw new NotFoundException('User not found.');
 
     const isOldPinValid = await bcrypt.compare(dto.oldPin, user.pin);
-    if (!isOldPinValid) throw new UnauthorizedException('Your current PIN is incorrect.');
+    if (!isOldPinValid)
+      throw new UnauthorizedException('Your current PIN is incorrect.');
 
     const hashedNewPin = await bcrypt.hash(dto.newPin, 10);
-    await this.prisma.user.update({ where: { id: userId }, data: { pin: hashedNewPin } });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { pin: hashedNewPin },
+    });
 
     return { success: true };
   }
@@ -238,29 +511,51 @@ export class UserService {
   // real banking apps resolving a beneficiary name before confirming.
   async resolveRecipient(identifier: string, requestingUserId: string) {
     const cleanIdentifier = (identifier || '').trim();
-    if (!cleanIdentifier) throw new BadRequestException('Provide an account number or phone number.');
+    if (!cleanIdentifier)
+      throw new BadRequestException(
+        'Provide an account number or phone number.',
+      );
 
     const recipient = await this.prisma.user.findFirst({
       where: {
-        OR: [{ accountNumber: cleanIdentifier }, { phone: cleanIdentifier }, { businessAccountNumber: cleanIdentifier }],
+        OR: [
+          { accountNumber: cleanIdentifier },
+          { phone: cleanIdentifier },
+          { businessAccountNumber: cleanIdentifier },
+        ],
       },
-      select: { id: true, name: true, accountNumber: true, phone: true, profileImage: true, businessName: true, businessAccountNumber: true },
+      select: {
+        id: true,
+        name: true,
+        accountNumber: true,
+        phone: true,
+        profileImage: true,
+        businessName: true,
+        businessAccountNumber: true,
+      },
     });
 
     if (!recipient) {
-      throw new NotFoundException('No Zannypay user found with that account number or phone number.');
+      throw new NotFoundException(
+        'No Zannypay user found with that account number or phone number.',
+      );
     }
 
     if (recipient.id === requestingUserId) {
-      throw new BadRequestException('That identifier belongs to your own account.');
+      throw new BadRequestException(
+        'That identifier belongs to your own account.',
+      );
     }
 
     // If the sender specifically typed the business number, show the
     // business name back to them — "Sending to: Jane's Bakery" is a more
     // meaningful confirmation than her personal name when that's clearly
     // what they meant to pay.
-    const matchedViaBusiness = recipient.businessAccountNumber === cleanIdentifier;
-    const displayRecipient = matchedViaBusiness ? { ...recipient, name: recipient.businessName || recipient.name } : recipient;
+    const matchedViaBusiness =
+      recipient.businessAccountNumber === cleanIdentifier;
+    const displayRecipient = matchedViaBusiness
+      ? { ...recipient, name: recipient.businessName || recipient.name }
+      : recipient;
 
     return { found: true, recipient: displayRecipient };
   }

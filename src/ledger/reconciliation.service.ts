@@ -47,30 +47,53 @@ export class ReconciliationService {
     try {
       await this.run();
     } catch (err: any) {
-      const isConnectivityIssue = err?.code === 'P1001' || /Can't reach database server/i.test(err?.message || '');
+      const isConnectivityIssue =
+        err?.code === 'P1001' ||
+        /Can't reach database server/i.test(err?.message || '');
       if (isConnectivityIssue) {
-        this.logger.error(`Scheduled reconciliation could not reach the database — skipping, will retry tomorrow. (${err.message})`);
+        this.logger.error(
+          `Scheduled reconciliation could not reach the database — skipping, will retry tomorrow. (${err.message})`,
+        );
       } else {
-        this.logger.error(`Scheduled reconciliation failed unexpectedly: ${err.message}`, err.stack);
+        this.logger.error(
+          `Scheduled reconciliation failed unexpectedly: ${err.message}`,
+          err.stack,
+        );
       }
     }
   }
 
   /** Also callable on demand — see LedgerController's manual-trigger endpoint for an admin who doesn't want to wait for 3am. */
-  async run(): Promise<{ accountsChecked: number; discrepancies: Discrepancy[] }> {
+  async run(): Promise<{
+    accountsChecked: number;
+    discrepancies: Discrepancy[];
+  }> {
     const discrepancies: Discrepancy[] = [];
     let accountsChecked = 0;
 
-    const wallets = await this.prisma.wallet.findMany({ select: { userId: true, balance: true } });
+    const wallets = await this.prisma.wallet.findMany({
+      select: { userId: true, balance: true },
+    });
     for (const wallet of wallets) {
       accountsChecked++;
-      const account = await this.ledgerService.getOrCreateCustomerAccount(LedgerAccountType.CUSTOMER_WALLET, wallet.userId);
-      const ledgerBalance = await this.ledgerService.getAccountBalance(account.id);
+      const account = await this.ledgerService.getOrCreateCustomerAccount(
+        LedgerAccountType.CUSTOMER_WALLET,
+        wallet.userId,
+      );
+      const ledgerBalance = await this.ledgerService.getAccountBalance(
+        account.id,
+      );
       const cachedBalance = Number(wallet.balance);
       const difference = cachedBalance - ledgerBalance;
 
       if (Math.abs(difference) > DISCREPANCY_TOLERANCE) {
-        discrepancies.push({ userId: wallet.userId, kind: 'wallet', cachedValue: cachedBalance, ledgerValue: ledgerBalance, difference });
+        discrepancies.push({
+          userId: wallet.userId,
+          kind: 'wallet',
+          cachedValue: cachedBalance,
+          ledgerValue: ledgerBalance,
+          difference,
+        });
       }
     }
 
@@ -79,22 +102,40 @@ export class ReconciliationService {
     // total saved funds moved out of the spendable wallet, not a
     // per-goal split — a goal-level ledger would be a reasonable future
     // refinement if per-goal auditability is ever needed).
-    const savingsTotals = await this.prisma.savingsGoal.groupBy({ by: ['userId'], _sum: { saved: true } });
+    const savingsTotals = await this.prisma.savingsGoal.groupBy({
+      by: ['userId'],
+      _sum: { saved: true },
+    });
     for (const row of savingsTotals) {
       const cachedTotal = Number(row._sum.saved || 0);
       if (cachedTotal <= 0) continue;
       accountsChecked++;
-      const account = await this.ledgerService.getOrCreateCustomerAccount(LedgerAccountType.CUSTOMER_SAVINGS, row.userId);
-      const ledgerBalance = await this.ledgerService.getAccountBalance(account.id);
+      const account = await this.ledgerService.getOrCreateCustomerAccount(
+        LedgerAccountType.CUSTOMER_SAVINGS,
+        row.userId,
+      );
+      const ledgerBalance = await this.ledgerService.getAccountBalance(
+        account.id,
+      );
       const difference = cachedTotal - ledgerBalance;
 
       if (Math.abs(difference) > DISCREPANCY_TOLERANCE) {
-        discrepancies.push({ userId: row.userId, kind: 'savings', cachedValue: cachedTotal, ledgerValue: ledgerBalance, difference });
+        discrepancies.push({
+          userId: row.userId,
+          kind: 'savings',
+          cachedValue: cachedTotal,
+          ledgerValue: ledgerBalance,
+          difference,
+        });
       }
     }
 
     await this.prisma.ledgerReconciliationRun.create({
-      data: { accountsChecked, discrepanciesFound: discrepancies.length, details: discrepancies as any },
+      data: {
+        accountsChecked,
+        discrepanciesFound: discrepancies.length,
+        details: discrepancies as any,
+      },
     });
 
     if (discrepancies.length > 0) {
@@ -103,9 +144,13 @@ export class ReconciliationService {
       // is deliberately not silent, but it's also not yet routed
       // anywhere beyond the application log and the admin dashboard's
       // reconciliation history.
-      this.logger.error(`Ledger reconciliation found ${discrepancies.length} discrepanc${discrepancies.length === 1 ? 'y' : 'ies'} out of ${accountsChecked} accounts checked.`);
+      this.logger.error(
+        `Ledger reconciliation found ${discrepancies.length} discrepanc${discrepancies.length === 1 ? 'y' : 'ies'} out of ${accountsChecked} accounts checked.`,
+      );
     } else {
-      this.logger.log(`Ledger reconciliation clean — ${accountsChecked} accounts checked, 0 discrepancies.`);
+      this.logger.log(
+        `Ledger reconciliation clean — ${accountsChecked} accounts checked, 0 discrepancies.`,
+      );
     }
 
     return { accountsChecked, discrepancies };

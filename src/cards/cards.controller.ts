@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Patch, Delete, Body, Req, UseGuards, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Req,
+  UseGuards,
+  Param,
+} from '@nestjs/common';
 import { CardsService } from './cards.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -22,7 +32,10 @@ export class CardsController {
   // Master audit, Section 5 — linking an existing external card as an
   // alternative to requesting a new ZannyPay-issued one.
   @Post('link')
-  async linkExternalCard(@Req() req, @Body('authorizationCode') authorizationCode: string) {
+  async linkExternalCard(
+    @Req() req,
+    @Body('authorizationCode') authorizationCode: string,
+  ) {
     const userId = req.user.sub || req.user.userId;
     return this.cardsService.linkExternalCard(userId, authorizationCode);
   }
@@ -52,7 +65,12 @@ export class CardsController {
     @Body('monthlyLimit') monthlyLimit?: number,
   ) {
     const userId = req.user.sub || req.user.userId;
-    return this.cardsService.updateLimits(userId, cardId, dailyLimit, monthlyLimit);
+    return this.cardsService.updateLimits(
+      userId,
+      cardId,
+      dailyLimit,
+      monthlyLimit,
+    );
   }
 
   @Get(':id/activity')
@@ -65,7 +83,11 @@ export class CardsController {
   // the full PAN was moved behind an explicit reveal action instead of
   // riding along on every GET /cards response.
   @Post(':id/reveal')
-  async revealCardNumber(@Req() req, @Param('id') cardId: string, @Body('pin') pin: string) {
+  async revealCardNumber(
+    @Req() req,
+    @Param('id') cardId: string,
+    @Body('pin') pin: string,
+  ) {
     const userId = req.user.sub || req.user.userId;
     return this.cardsService.revealCardNumber(userId, cardId, pin);
   }

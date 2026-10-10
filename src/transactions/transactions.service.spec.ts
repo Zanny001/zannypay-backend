@@ -19,8 +19,18 @@ describe('TransactionsService', () => {
         { provide: MailerService, useValue: { sendMail: jest.fn() } },
         { provide: FraudService, useValue: { evaluateTransaction: jest.fn() } },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
-        { provide: BeneficiariesService, useValue: { recordPaymentIfSaved: jest.fn() } },
-        { provide: LedgerService, useValue: { getOrCreateCustomerAccount: jest.fn(), getOrCreateSystemAccount: jest.fn(), postJournal: jest.fn() } },
+        {
+          provide: BeneficiariesService,
+          useValue: { recordPaymentIfSaved: jest.fn() },
+        },
+        {
+          provide: LedgerService,
+          useValue: {
+            getOrCreateCustomerAccount: jest.fn(),
+            getOrCreateSystemAccount: jest.fn(),
+            postJournal: jest.fn(),
+          },
+        },
         { provide: AnalyticsService, useValue: { track: jest.fn() } },
       ],
     }).compile();

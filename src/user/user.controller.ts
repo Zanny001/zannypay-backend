@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Patch, Body, UseGuards, Req, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  UseGuards,
+  Req,
+  Param,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -15,6 +25,26 @@ export class UserController {
   async getProfileAndWallet(@Req() req) {
     const userId = req.user.sub || req.user.userId;
     return this.userService.getUserDashboard(userId);
+  }
+
+  // NDPR/GDPR data portability — see UserService.exportMyData. The full
+  // export is emailed to the address on file (or returned inline when no
+  // SMTP is configured); it never includes the PIN hash or encrypted
+  // BVN/NIN blobs.
+  @Get('me/export')
+  async exportMyData(@Req() req) {
+    const userId = req.user.sub || req.user.userId;
+    return this.userService.exportMyData(userId);
+  }
+
+  // Self-serve account erasure (App Store / Play policy + NDPR/GDPR).
+  // Anonymizes in place rather than hard-deleting — see
+  // UserService.deleteMyAccount for why. Tight throttle: irreversible.
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Delete('me')
+  async deleteMyAccount(@Req() req) {
+    const userId = req.user.sub || req.user.userId;
+    return this.userService.deleteMyAccount(userId);
   }
 
   @Patch('profile')

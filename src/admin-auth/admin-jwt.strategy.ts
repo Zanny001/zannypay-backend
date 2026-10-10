@@ -23,13 +23,17 @@ export class AdminJwtStrategy extends PassportStrategy(Strategy, 'admin-jwt') {
     // instead, 2FA was never completed — refuse it outright rather than
     // silently granting a full session.
     if (payload.mfaPending) {
-      throw new UnauthorizedException('Complete two-factor verification to continue.');
+      throw new UnauthorizedException(
+        'Complete two-factor verification to continue.',
+      );
     }
 
     // Re-checking isActive on every request (not just at login) means a
     // deactivated admin's existing token stops working immediately,
     // instead of staying valid until it naturally expires.
-    const admin = await this.prisma.adminUser.findUnique({ where: { id: payload.sub } });
+    const admin = await this.prisma.adminUser.findUnique({
+      where: { id: payload.sub },
+    });
     if (!admin || !admin.isActive) {
       throw new UnauthorizedException('This admin session is no longer valid.');
     }
@@ -39,12 +43,26 @@ export class AdminJwtStrategy extends PassportStrategy(Strategy, 'admin-jwt') {
     // a SUPER_ADMIN forcing a revoke all take effect immediately here,
     // rather than waiting out the token's natural 8h expiry.
     if (payload.jti) {
-      const session = await this.prisma.adminSession.findUnique({ where: { jti: payload.jti } });
-      if (!session || session.revokedAt || session.expiresAt.getTime() < Date.now()) {
-        throw new UnauthorizedException('This admin session has been revoked or has expired.');
+      const session = await this.prisma.adminSession.findUnique({
+        where: { jti: payload.jti },
+      });
+      if (
+        !session ||
+        session.revokedAt ||
+        session.expiresAt.getTime() < Date.now()
+      ) {
+        throw new UnauthorizedException(
+          'This admin session has been revoked or has expired.',
+        );
       }
     }
 
-    return { adminId: admin.id, name: admin.name, email: admin.email, role: admin.role, jti: payload.jti };
+    return {
+      adminId: admin.id,
+      name: admin.name,
+      email: admin.email,
+      role: admin.role,
+      jti: payload.jti,
+    };
   }
 }

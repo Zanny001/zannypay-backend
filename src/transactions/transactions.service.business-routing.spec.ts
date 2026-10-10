@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
-import * as bcrypt from 'bcryptjs';
+import * as bcrypt from 'bcrypt';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FraudService } from '../fraud/fraud.service';
@@ -10,7 +10,7 @@ import { BeneficiariesService } from '../beneficiaries/beneficiaries.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 
-jest.mock('bcryptjs');
+jest.mock('bcrypt');
 
 // Covers only what changed when ZannyPay Business Phase 1 touched this
 // function — recipient resolution via a business account number, tagging
@@ -24,15 +24,25 @@ describe('TransactionsService.transferFunds — business account routing', () =>
   let tx: any;
 
   const sender = {
-    id: 'sender-1', accountNumber: '9011111111', phone: '08011111111',
-    businessAccountNumber: null, isFrozen: false, pin: 'hashed', email: 'sender@test.com', name: 'Sender',
+    id: 'sender-1',
+    accountNumber: '9011111111',
+    phone: '08011111111',
+    businessAccountNumber: null,
+    isFrozen: false,
+    pin: 'hashed',
+    email: 'sender@test.com',
+    name: 'Sender',
     wallet: { balance: 100000 },
   };
 
   function makeRecipient(overrides: Partial<typeof sender> = {}) {
     return {
-      id: 'recipient-1', accountNumber: '9022222222', phone: '08022222222',
-      businessAccountNumber: '9133333333', email: 'recipient@test.com', name: 'Recipient',
+      id: 'recipient-1',
+      accountNumber: '9022222222',
+      phone: '08022222222',
+      businessAccountNumber: '9133333333',
+      email: 'recipient@test.com',
+      name: 'Recipient',
       wallet: { balance: 5000 },
       ...overrides,
     };
@@ -43,7 +53,11 @@ describe('TransactionsService.transferFunds — business account routing', () =>
       user: { findUnique: jest.fn(), findFirst: jest.fn() },
       wallet: { update: jest.fn().mockResolvedValue({}) },
       transaction: {
-        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'txn-id', reference: 'TXN-REF', ...data })),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'txn-id', reference: 'TXN-REF', ...data }),
+          ),
       },
     };
     prisma = {
@@ -55,19 +69,40 @@ describe('TransactionsService.transferFunds — business account routing', () =>
       providers: [
         TransactionsService,
         { provide: PrismaService, useValue: prisma },
-        { provide: MailerService, useValue: { sendMail: jest.fn().mockResolvedValue({}) } },
-        { provide: FraudService, useValue: { evaluateTransaction: jest.fn().mockResolvedValue({}) } },
-        { provide: NotificationsService, useValue: { create: jest.fn().mockResolvedValue({}) } },
-        { provide: BeneficiariesService, useValue: { recordPaymentIfSaved: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: MailerService,
+          useValue: { sendMail: jest.fn().mockResolvedValue({}) },
+        },
+        {
+          provide: FraudService,
+          useValue: { evaluateTransaction: jest.fn().mockResolvedValue({}) },
+        },
+        {
+          provide: NotificationsService,
+          useValue: { create: jest.fn().mockResolvedValue({}) },
+        },
+        {
+          provide: BeneficiariesService,
+          useValue: {
+            recordPaymentIfSaved: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         {
           provide: LedgerService,
           useValue: {
-            getOrCreateCustomerAccount: jest.fn().mockResolvedValue({ id: 'mock-wallet-account' }),
-            getOrCreateSystemAccount: jest.fn().mockResolvedValue({ id: 'mock-system-account' }),
+            getOrCreateCustomerAccount: jest
+              .fn()
+              .mockResolvedValue({ id: 'mock-wallet-account' }),
+            getOrCreateSystemAccount: jest
+              .fn()
+              .mockResolvedValue({ id: 'mock-system-account' }),
             postJournal: jest.fn().mockResolvedValue('mock-journal-id'),
           },
         },
-        { provide: AnalyticsService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: AnalyticsService,
+          useValue: { track: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 
@@ -79,11 +114,17 @@ describe('TransactionsService.transferFunds — business account routing', () =>
     tx.user.findUnique.mockResolvedValue({ ...sender });
     tx.user.findFirst.mockResolvedValue(makeRecipient());
 
-    await service.transferFunds('sender-1', { recipientAccount: '9133333333', amount: 1000, pin: '1234' } as any);
+    await service.transferFunds('sender-1', {
+      recipientAccount: '9133333333',
+      amount: 1000,
+      pin: '1234',
+    });
 
     expect(tx.user.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { OR: expect.arrayContaining([{ businessAccountNumber: '9133333333' }]) },
+        where: {
+          OR: expect.arrayContaining([{ businessAccountNumber: '9133333333' }]),
+        },
       }),
     );
   });
@@ -92,9 +133,15 @@ describe('TransactionsService.transferFunds — business account routing', () =>
     tx.user.findUnique.mockResolvedValue({ ...sender });
     tx.user.findFirst.mockResolvedValue(makeRecipient());
 
-    await service.transferFunds('sender-1', { recipientAccount: '9133333333', amount: 1000, pin: '1234' } as any);
+    await service.transferFunds('sender-1', {
+      recipientAccount: '9133333333',
+      amount: 1000,
+      pin: '1234',
+    });
 
-    const creditCall = tx.transaction.create.mock.calls.find((c: any) => c[0].data.type === 'credit');
+    const creditCall = tx.transaction.create.mock.calls.find(
+      (c: any) => c[0].data.type === 'credit',
+    );
     expect(creditCall[0].data.receivedVia).toBe('business');
   });
 
@@ -102,9 +149,15 @@ describe('TransactionsService.transferFunds — business account routing', () =>
     tx.user.findUnique.mockResolvedValue({ ...sender });
     tx.user.findFirst.mockResolvedValue(makeRecipient());
 
-    await service.transferFunds('sender-1', { recipientAccount: '9022222222', amount: 1000, pin: '1234' } as any);
+    await service.transferFunds('sender-1', {
+      recipientAccount: '9022222222',
+      amount: 1000,
+      pin: '1234',
+    });
 
-    const creditCall = tx.transaction.create.mock.calls.find((c: any) => c[0].data.type === 'credit');
+    const creditCall = tx.transaction.create.mock.calls.find(
+      (c: any) => c[0].data.type === 'credit',
+    );
     expect(creditCall[0].data.receivedVia).toBe('personal');
   });
 
@@ -112,27 +165,48 @@ describe('TransactionsService.transferFunds — business account routing', () =>
     tx.user.findUnique.mockResolvedValue({ ...sender });
     tx.user.findFirst.mockResolvedValue(makeRecipient());
 
-    await service.transferFunds('sender-1', { recipientAccount: '08022222222', amount: 1000, pin: '1234' } as any);
+    await service.transferFunds('sender-1', {
+      recipientAccount: '08022222222',
+      amount: 1000,
+      pin: '1234',
+    });
 
-    const creditCall = tx.transaction.create.mock.calls.find((c: any) => c[0].data.type === 'credit');
+    const creditCall = tx.transaction.create.mock.calls.find(
+      (c: any) => c[0].data.type === 'credit',
+    );
     expect(creditCall[0].data.receivedVia).toBe('personal');
   });
 
   it('defaults to "personal" for a recipient who has never activated a business account', async () => {
     tx.user.findUnique.mockResolvedValue({ ...sender });
-    tx.user.findFirst.mockResolvedValue(makeRecipient({ businessAccountNumber: null }));
+    tx.user.findFirst.mockResolvedValue(
+      makeRecipient({ businessAccountNumber: null }),
+    );
 
-    await service.transferFunds('sender-1', { recipientAccount: '9022222222', amount: 1000, pin: '1234' } as any);
+    await service.transferFunds('sender-1', {
+      recipientAccount: '9022222222',
+      amount: 1000,
+      pin: '1234',
+    });
 
-    const creditCall = tx.transaction.create.mock.calls.find((c: any) => c[0].data.type === 'credit');
+    const creditCall = tx.transaction.create.mock.calls.find(
+      (c: any) => c[0].data.type === 'credit',
+    );
     expect(creditCall[0].data.receivedVia).toBe('personal');
   });
 
   it('blocks a transfer to your own business account number — the wash-transaction / fake-revenue guard', async () => {
-    tx.user.findUnique.mockResolvedValue({ ...sender, businessAccountNumber: '9199999999' });
+    tx.user.findUnique.mockResolvedValue({
+      ...sender,
+      businessAccountNumber: '9199999999',
+    });
 
     await expect(
-      service.transferFunds('sender-1', { recipientAccount: '9199999999', amount: 1000, pin: '1234' } as any),
+      service.transferFunds('sender-1', {
+        recipientAccount: '9199999999',
+        amount: 1000,
+        pin: '1234',
+      } as any),
     ).rejects.toThrow(BadRequestException);
 
     // Confirms this is caught before anything else — no wallet or ledger

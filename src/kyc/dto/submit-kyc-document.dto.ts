@@ -1,6 +1,11 @@
 import { IsIn, IsString } from 'class-validator';
 
-export const KYC_DOCUMENT_TYPES = ['id_front', 'id_back', 'selfie', 'proof_of_address'] as const;
+export const KYC_DOCUMENT_TYPES = [
+  'id_front',
+  'id_back',
+  'selfie',
+  'proof_of_address',
+] as const;
 
 export class SubmitKycDocumentDto {
   @IsIn(KYC_DOCUMENT_TYPES)

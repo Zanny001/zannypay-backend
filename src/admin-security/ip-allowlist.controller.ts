@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Param,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { IpAllowlistService } from './ip-allowlist.service';
 import { AdminIpAllowlistGuard } from './admin-ip-allowlist.guard';
 import { AdminJwtAuthGuard } from '../admin-auth/admin-jwt-auth.guard';
@@ -14,7 +23,12 @@ import { CreateIpAllowlistEntryDto } from './dto/create-ip-allowlist-entry.dto';
 // so this was already an enforcement gap identical in shape to the
 // COMPLIANCE_OFFICER one the master audit caught elsewhere.
 @Controller('admin/security/ip-allowlist')
-@UseGuards(AdminIpAllowlistGuard, AdminJwtAuthGuard, RolesGuard, Require2faGuard)
+@UseGuards(
+  AdminIpAllowlistGuard,
+  AdminJwtAuthGuard,
+  RolesGuard,
+  Require2faGuard,
+)
 @Roles('SUPER_ADMIN')
 export class IpAllowlistController {
   constructor(private readonly ipAllowlistService: IpAllowlistService) {}
@@ -26,7 +40,12 @@ export class IpAllowlistController {
 
   @Post()
   async create(@Req() req, @Body() dto: CreateIpAllowlistEntryDto) {
-    return this.ipAllowlistService.create(req.user.adminId, dto.cidr, dto.label, req.ip);
+    return this.ipAllowlistService.create(
+      req.user.adminId,
+      dto.cidr,
+      dto.label,
+      req.ip,
+    );
   }
 
   @Delete(':id')

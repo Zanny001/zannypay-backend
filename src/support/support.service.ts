@@ -1,9 +1,16 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { StorageService } from '../storage/storage.service';
-import { AnalyticsService, ANALYTICS_EVENTS } from '../analytics/analytics.service';
+import {
+  AnalyticsService,
+  ANALYTICS_EVENTS,
+} from '../analytics/analytics.service';
 
 // Sent automatically the moment a customer's first message in a
 // conversation lands — before any human agent has seen it — so the chat
@@ -34,7 +41,9 @@ export class SupportService {
       orderBy: { createdAt: 'desc' },
     });
     if (!conversation) {
-      conversation = await this.prisma.conversation.create({ data: { userId } });
+      conversation = await this.prisma.conversation.create({
+        data: { userId },
+      });
     }
     const messages = await this.prisma.chatMessage.findMany({
       where: { conversationId: conversation.id },
@@ -43,11 +52,17 @@ export class SupportService {
     return { conversation, messages };
   }
 
-  async sendCustomerMessage(userId: string, body?: string, attachmentData?: string, attachmentMimeType?: string) {
+  async sendCustomerMessage(
+    userId: string,
+    body?: string,
+    attachmentData?: string,
+    attachmentMimeType?: string,
+  ) {
     if (!body?.trim() && !attachmentData) {
       throw new BadRequestException('Message cannot be empty.');
     }
-    const { conversation, messages: existingMessages } = await this.getOrCreateOpenConversation(userId);
+    const { conversation, messages: existingMessages } =
+      await this.getOrCreateOpenConversation(userId);
 
     // The signal for "this is genuinely their first message" is zero
     // prior ChatMessage rows — NOT whether the Conversation record was
@@ -62,25 +77,47 @@ export class SupportService {
     // Critical #2) — a chat photo is exactly the kind of attachment that
     // should never live as base64 in the primary database.
     const resolvedAttachment = attachmentData
-      ? await this.storageService.storeImage(attachmentData, `chat-attachments/${conversation.id}`)
+      ? await this.storageService.storeImage(
+          attachmentData,
+          `chat-attachments/${conversation.id}`,
+        )
       : attachmentData;
 
     const message = await this.prisma.chatMessage.create({
-      data: { conversationId: conversation.id, senderType: 'CUSTOMER', body, attachmentData: resolvedAttachment, attachmentMimeType },
+      data: {
+        conversationId: conversation.id,
+        senderType: 'CUSTOMER',
+        body,
+        attachmentData: resolvedAttachment,
+        attachmentMimeType,
+      },
     });
-    await this.prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { updatedAt: new Date() },
+    });
 
     let autoReply: any = null;
     if (isFirstMessageInConversation) {
       autoReply = await this.prisma.chatMessage.create({
-        data: { conversationId: conversation.id, senderType: 'AUTO', body: AUTO_REPLY_BODY },
+        data: {
+          conversationId: conversation.id,
+          senderType: 'AUTO',
+          body: AUTO_REPLY_BODY,
+        },
       });
-      await this.prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { updatedAt: new Date() },
+      });
       // No push/notification for this one — the customer is already
       // looking at the chat screen in the same request cycle that
       // produced it, unlike a real admin reply which can arrive minutes
       // or hours later while they're off doing something else.
-      await this.analyticsService.track(ANALYTICS_EVENTS.SUPPORT_CONVERSATION_STARTED, { userId });
+      await this.analyticsService.track(
+        ANALYTICS_EVENTS.SUPPORT_CONVERSATION_STARTED,
+        { userId },
+      );
     }
 
     return { success: true, message, autoReply };
@@ -104,7 +141,9 @@ export class SupportService {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
-        user: { select: { name: true, phone: true, email: true, accountNumber: true } },
+        user: {
+          select: { name: true, phone: true, email: true, accountNumber: true },
+        },
         messages: { orderBy: { createdAt: 'asc' } },
       },
     });
@@ -112,19 +151,38 @@ export class SupportService {
     return conversation;
   }
 
-  async sendAdminReply(actingAdminId: string, conversationId: string, body?: string, ip?: string, attachmentData?: string, attachmentMimeType?: string) {
+  async sendAdminReply(
+    actingAdminId: string,
+    conversationId: string,
+    body?: string,
+    ip?: string,
+    attachmentData?: string,
+    attachmentMimeType?: string,
+  ) {
     if (!body?.trim() && !attachmentData) {
       throw new BadRequestException('Message cannot be empty.');
     }
-    const conversation = await this.prisma.conversation.findUnique({ where: { id: conversationId } });
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
     if (!conversation) throw new NotFoundException('Conversation not found.');
 
     const resolvedAttachment = attachmentData
-      ? await this.storageService.storeImage(attachmentData, `chat-attachments/${conversationId}`)
+      ? await this.storageService.storeImage(
+          attachmentData,
+          `chat-attachments/${conversationId}`,
+        )
       : attachmentData;
 
     const message = await this.prisma.chatMessage.create({
-      data: { conversationId, senderType: 'ADMIN', senderAdminId: actingAdminId, body, attachmentData: resolvedAttachment, attachmentMimeType },
+      data: {
+        conversationId,
+        senderType: 'ADMIN',
+        senderAdminId: actingAdminId,
+        body,
+        attachmentData: resolvedAttachment,
+        attachmentMimeType,
+      },
     });
     await this.prisma.conversation.update({
       where: { id: conversationId },
@@ -134,7 +192,11 @@ export class SupportService {
     // The customer finds out a reply is waiting even if they've left the
     // chat screen — this is exactly the kind of event the notification
     // system exists for.
-    const previewText = body ? (body.length > 100 ? `${body.slice(0, 100)}…` : body) : '📷 Sent an image';
+    const previewText = body
+      ? body.length > 100
+        ? `${body.slice(0, 100)}…`
+        : body
+      : '📷 Sent an image';
     await this.notifications.create(
       conversation.userId,
       'chat_reply',
@@ -154,7 +216,11 @@ export class SupportService {
     return { success: true, message };
   }
 
-  async resolveConversation(actingAdminId: string, conversationId: string, ip?: string) {
+  async resolveConversation(
+    actingAdminId: string,
+    conversationId: string,
+    ip?: string,
+  ) {
     const conversation = await this.prisma.conversation.update({
       where: { id: conversationId },
       data: { status: 'resolved' },

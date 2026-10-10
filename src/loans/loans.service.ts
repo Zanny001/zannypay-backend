@@ -1,8 +1,16 @@
-import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { LedgerAccountType, LedgerDirection } from '@prisma/client';
-import { AnalyticsService, ANALYTICS_EVENTS } from '../analytics/analytics.service';
+import {
+  AnalyticsService,
+  ANALYTICS_EVENTS,
+} from '../analytics/analytics.service';
 
 @Injectable()
 export class LoansService {
@@ -20,14 +28,19 @@ export class LoansService {
     const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId } });
       if (!user) throw new NotFoundException('User not found.');
-      if (user.isFrozen) throw new ForbiddenException('Your account is currently restricted. Please contact support.');
+      if (user.isFrozen)
+        throw new ForbiddenException(
+          'Your account is currently restricted. Please contact support.',
+        );
 
       const activeLoan = await tx.loan.findFirst({
         where: { userId, repaid: false },
       });
 
       if (activeLoan) {
-        throw new BadRequestException('You already have an active loan. Please repay it first.');
+        throw new BadRequestException(
+          'You already have an active loan. Please repay it first.',
+        );
       }
 
       const fee = amount * this.LOAN_INTEREST_RATE;
@@ -69,27 +82,50 @@ export class LoansService {
       // repayment side below blends principal+fee back into
       // SYSTEM_LOAN_POOL together — see the schema comment on that
       // simplification).
-      const loanPoolAccount = await this.ledgerService.getOrCreateSystemAccount(LedgerAccountType.SYSTEM_LOAN_POOL, tx);
-      const walletAccountLoan = await this.ledgerService.getOrCreateCustomerAccount(LedgerAccountType.CUSTOMER_WALLET, userId, tx);
+      const loanPoolAccount = await this.ledgerService.getOrCreateSystemAccount(
+        LedgerAccountType.SYSTEM_LOAN_POOL,
+        tx,
+      );
+      const walletAccountLoan =
+        await this.ledgerService.getOrCreateCustomerAccount(
+          LedgerAccountType.CUSTOMER_WALLET,
+          userId,
+          tx,
+        );
       await this.ledgerService.postJournal(
         tx,
         [
-          { accountId: loanPoolAccount.id, direction: LedgerDirection.DEBIT, amount },
-          { accountId: walletAccountLoan.id, direction: LedgerDirection.CREDIT, amount },
+          {
+            accountId: loanPoolAccount.id,
+            direction: LedgerDirection.DEBIT,
+            amount,
+          },
+          {
+            accountId: walletAccountLoan.id,
+            direction: LedgerDirection.CREDIT,
+            amount,
+          },
         ],
-        { transactionId: disbursementTxn.id, memo: `Loan disbursement, ${termDays}-day term` },
+        {
+          transactionId: disbursementTxn.id,
+          memo: `Loan disbursement, ${termDays}-day term`,
+        },
       );
 
       return { success: true, loan };
     });
 
-    await this.analyticsService.track(ANALYTICS_EVENTS.LOAN_REQUESTED, { userId, properties: { amount, termDays } });
+    await this.analyticsService.track(ANALYTICS_EVENTS.LOAN_REQUESTED, {
+      userId,
+      properties: { amount, termDays },
+    });
 
     return result;
   }
 
   async repayLoan(userId: string, amount: number) {
-    if (amount <= 0) throw new BadRequestException('Amount must be greater than zero.');
+    if (amount <= 0)
+      throw new BadRequestException('Amount must be greater than zero.');
 
     const result = await this.prisma.$transaction(async (tx) => {
       const activeLoan = await tx.loan.findFirst({
@@ -100,14 +136,20 @@ export class LoansService {
         throw new BadRequestException('No active loan found to repay.');
       }
 
-      const user = await tx.user.findUnique({ where: { id: userId }, include: { wallet: true } });
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        include: { wallet: true },
+      });
       if (!user) throw new NotFoundException('User not found.');
 
       if (Number(user.wallet.balance) < amount) {
-        throw new BadRequestException('Insufficient wallet balance to make this repayment.');
+        throw new BadRequestException(
+          'Insufficient wallet balance to make this repayment.',
+        );
       }
 
-      const remainingBalance = Number(activeLoan.totalOwed) - Number(activeLoan.amountRepaid);
+      const remainingBalance =
+        Number(activeLoan.totalOwed) - Number(activeLoan.amountRepaid);
       const paymentAmount = Math.min(amount, remainingBalance);
 
       const newAmountRepaid = Number(activeLoan.amountRepaid) + paymentAmount;
@@ -139,15 +181,35 @@ export class LoansService {
         },
       });
 
-      const walletAccountRepay = await this.ledgerService.getOrCreateCustomerAccount(LedgerAccountType.CUSTOMER_WALLET, userId, tx);
-      const loanPoolAccountRepay = await this.ledgerService.getOrCreateSystemAccount(LedgerAccountType.SYSTEM_LOAN_POOL, tx);
+      const walletAccountRepay =
+        await this.ledgerService.getOrCreateCustomerAccount(
+          LedgerAccountType.CUSTOMER_WALLET,
+          userId,
+          tx,
+        );
+      const loanPoolAccountRepay =
+        await this.ledgerService.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_LOAN_POOL,
+          tx,
+        );
       await this.ledgerService.postJournal(
         tx,
         [
-          { accountId: walletAccountRepay.id, direction: LedgerDirection.DEBIT, amount: paymentAmount },
-          { accountId: loanPoolAccountRepay.id, direction: LedgerDirection.CREDIT, amount: paymentAmount },
+          {
+            accountId: walletAccountRepay.id,
+            direction: LedgerDirection.DEBIT,
+            amount: paymentAmount,
+          },
+          {
+            accountId: loanPoolAccountRepay.id,
+            direction: LedgerDirection.CREDIT,
+            amount: paymentAmount,
+          },
         ],
-        { transactionId: repaymentTxn.id, memo: isRepaid ? 'Final loan repayment' : 'Loan repayment' },
+        {
+          transactionId: repaymentTxn.id,
+          memo: isRepaid ? 'Final loan repayment' : 'Loan repayment',
+        },
       );
 
       return { success: true, loan: updatedLoan, isRepaid, paymentAmount };
@@ -155,7 +217,10 @@ export class LoansService {
 
     await this.analyticsService.track(ANALYTICS_EVENTS.LOAN_REPAID, {
       userId,
-      properties: { amount: result.paymentAmount, isFullyRepaid: result.isRepaid },
+      properties: {
+        amount: result.paymentAmount,
+        isFullyRepaid: result.isRepaid,
+      },
     });
 
     return { success: result.success, loan: result.loan };

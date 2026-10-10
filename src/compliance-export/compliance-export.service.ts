@@ -9,7 +9,8 @@ import { PrismaService } from '../prisma/prisma.service';
 // PDF library's type surface, this trades type-safety on `doc` (pdfkit's
 // chainable .fontSize().text() API is stable and well-documented, so the
 // runtime risk is low) for zero risk of a TS error blocking the build.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate: avoids a TS-types dependency on pdfkit's chainable API for a single untyped usage
 const PDFDocument = require('pdfkit');
 
 // Master audit, Section 8: "a formal, exportable record — CSV today, a
@@ -29,7 +30,11 @@ export class ComplianceExportService {
     if (!user) throw new NotFoundException('User not found.');
 
     const decisions = await this.prisma.auditLog.findMany({
-      where: { targetType: 'User', targetId: userId, action: { in: ['APPROVE_KYC', 'REJECT_KYC'] } },
+      where: {
+        targetType: 'User',
+        targetId: userId,
+        action: { in: ['APPROVE_KYC', 'REJECT_KYC'] },
+      },
       include: { admin: { select: { name: true, email: true, role: true } } },
       orderBy: { createdAt: 'asc' },
     });
@@ -45,12 +50,23 @@ export class ComplianceExportService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', (err: Error) => reject(err));
 
-      doc.fontSize(18).fillColor('#0D2261').text('ZannyPay — KYC Decision Record', { align: 'left' });
+      doc
+        .fontSize(18)
+        .fillColor('#0D2261')
+        .text('ZannyPay — KYC Decision Record', { align: 'left' });
       doc.moveDown(0.3);
-      doc.fontSize(9).fillColor('#666666').text(`Generated ${new Date().toLocaleString()} — internal compliance use only`);
+      doc
+        .fontSize(9)
+        .fillColor('#666666')
+        .text(
+          `Generated ${new Date().toLocaleString()} — internal compliance use only`,
+        );
       doc.moveDown(1.2);
 
-      doc.fontSize(12).fillColor('#000000').text('Customer', { underline: true });
+      doc
+        .fontSize(12)
+        .fillColor('#000000')
+        .text('Customer', { underline: true });
       doc.moveDown(0.4);
       doc.fontSize(10).fillColor('#333333');
       const bio: [string, string][] = [
@@ -59,9 +75,20 @@ export class ComplianceExportService {
         ['Phone', user.phone || '—'],
         ['Account number', user.accountNumber || '—'],
         ['Nationality', user.nationality || '—'],
-        ['Date of birth', user.dateOfBirth ? new Date(user.dateOfBirth).toLocaleDateString() : '—'],
-        ['BVN (last 4)', user.bvnLast4 ? `•••••••${user.bvnLast4}` : 'Not provided'],
-        ['NIN (last 4)', user.ninLast4 ? `•••••••${user.ninLast4}` : 'Not provided'],
+        [
+          'Date of birth',
+          user.dateOfBirth
+            ? new Date(user.dateOfBirth).toLocaleDateString()
+            : '—',
+        ],
+        [
+          'BVN (last 4)',
+          user.bvnLast4 ? `•••••••${user.bvnLast4}` : 'Not provided',
+        ],
+        [
+          'NIN (last 4)',
+          user.ninLast4 ? `•••••••${user.ninLast4}` : 'Not provided',
+        ],
         ['Current KYC status', `Tier ${user.kycTier} · ${user.kycStatus}`],
       ];
       for (const [label, value] of bio) {
@@ -69,12 +96,17 @@ export class ComplianceExportService {
       }
       doc.moveDown(1);
 
-      doc.fontSize(12).fillColor('#000000').text('Decision History', { underline: true });
+      doc
+        .fontSize(12)
+        .fillColor('#000000')
+        .text('Decision History', { underline: true });
       doc.moveDown(0.4);
       doc.fontSize(10).fillColor('#333333');
 
       if (decisions.length === 0) {
-        doc.text('No KYC approve/reject decisions recorded for this customer yet.');
+        doc.text(
+          'No KYC approve/reject decisions recorded for this customer yet.',
+        );
       } else {
         for (const entry of decisions) {
           const isApproval = entry.action === 'APPROVE_KYC';
@@ -83,12 +115,18 @@ export class ComplianceExportService {
 
           doc
             .fillColor(isApproval ? '#0A7A3D' : '#B3261E')
-            .text(`${isApproval ? 'APPROVED' : 'REJECTED'} — ${new Date(entry.createdAt).toLocaleString()}`);
+            .text(
+              `${isApproval ? 'APPROVED' : 'REJECTED'} — ${new Date(entry.createdAt).toLocaleString()}`,
+            );
           doc.fillColor('#333333');
-          doc.text(`By: ${entry.admin?.name || 'Unknown admin'} (${entry.admin?.role || 'n/a'})`);
+          doc.text(
+            `By: ${entry.admin?.name || 'Unknown admin'} (${entry.admin?.role || 'n/a'})`,
+          );
           if (reason) doc.text(`Reason: ${reason}`);
           if (sanctionsMatch !== undefined) {
-            doc.text(`Sanctions/PEP screening: ${sanctionsMatch ? 'MATCH — see SanctionsScreeningResult for detail' : 'No match'}`);
+            doc.text(
+              `Sanctions/PEP screening: ${sanctionsMatch ? 'MATCH — see SanctionsScreeningResult for detail' : 'No match'}`,
+            );
           }
           doc.moveDown(0.6);
         }

@@ -29,7 +29,9 @@ describe('FraudService rules', () => {
 
   describe('LARGE_SINGLE_TRANSACTION', () => {
     const runRule = (amount: number, maxAmount: number) =>
-      (service as any).ruleLargeSingleTransaction({ amount } as any, { maxAmount });
+      (service as any).ruleLargeSingleTransaction({ amount } as any, {
+        maxAmount,
+      });
 
     it('does not trigger for an amount under the threshold', () => {
       expect(runRule(500_000, 1_000_000).triggered).toBe(false);
@@ -44,11 +46,17 @@ describe('FraudService rules', () => {
     it('triggers for an amount over the threshold, with the details a reviewer needs', () => {
       const result = runRule(1_500_000, 1_000_000);
       expect(result.triggered).toBe(true);
-      expect(result.details).toEqual({ maxAmount: 1_000_000, actualAmount: 1_500_000 });
+      expect(result.details).toEqual({
+        maxAmount: 1_000_000,
+        actualAmount: 1_500_000,
+      });
     });
 
     it('falls back to the default threshold if config is missing/malformed', () => {
-      const result = (service as any).ruleLargeSingleTransaction({ amount: 2_000_000 } as any, {});
+      const result = (service as any).ruleLargeSingleTransaction(
+        { amount: 2_000_000 } as any,
+        {},
+      );
       expect(result.triggered).toBe(true);
       expect(result.details.maxAmount).toBe(1_000_000);
     });

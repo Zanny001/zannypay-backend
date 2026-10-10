@@ -1,5 +1,13 @@
-
-import { Controller, Get, Post, Body, Param, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { TransactionsService } from './transactions.service';
 import { TransferDto } from './dto/transfer.dto';
@@ -95,4 +103,3 @@ export class TransactionsController {
   // paying. It's been removed. If your Paystack Dashboard webhook URL was
   // pointed at /wallet/paystack/webhook, update it to /paystack/webhook.
 }
-

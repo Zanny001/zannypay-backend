@@ -17,6 +17,11 @@ export class DisputesController {
   @Post()
   async createDispute(@Req() req, @Body() dto: CreateDisputeDto) {
     const userId = req.user.sub || req.user.userId;
-    return this.disputesService.createDispute(userId, dto.transactionId, dto.reason, dto.details);
+    return this.disputesService.createDispute(
+      userId,
+      dto.transactionId,
+      dto.reason,
+      dto.details,
+    );
   }
 }

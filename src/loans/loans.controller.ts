@@ -8,9 +8,16 @@ export class LoansController {
   constructor(private readonly loansService: LoansService) {}
 
   @Post('request')
-  async requestLoan(@Req() req, @Body() body: { amount: number; termDays?: number }) {
+  async requestLoan(
+    @Req() req,
+    @Body() body: { amount: number; termDays?: number },
+  ) {
     const userId = req.user.sub || req.user.userId;
-    return this.loansService.requestLoan(userId, Number(body.amount), body.termDays);
+    return this.loansService.requestLoan(
+      userId,
+      Number(body.amount),
+      body.termDays,
+    );
   }
 
   @Post('repay')

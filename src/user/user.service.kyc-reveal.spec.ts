@@ -1,10 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException, BadRequestException } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
+import * as bcrypt from 'bcrypt';
 import { UserService } from './user.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { SavingsService } from '../savings/savings.service';
+import { MailerService } from '@nestjs-modules/mailer';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 // Mocked rather than exercised for real: real encryption needs
 // CUSTOMER_PII_ENCRYPTION_KEY set, which this test environment has no
@@ -14,7 +16,7 @@ import { SavingsService } from '../savings/savings.service';
 jest.mock('../common/crypto.util', () => ({
   decryptCustomerPII: jest.fn((v: string) => `decrypted:${v}`),
 }));
-jest.mock('bcryptjs');
+jest.mock('bcrypt');
 
 // Covers the one piece of this session's BVN/NIN work that had no
 // executable verification when it was written: the brute-force lockout
@@ -45,8 +47,21 @@ describe('UserService.revealKycField', () => {
       providers: [
         UserService,
         { provide: PrismaService, useValue: prisma },
-        { provide: StorageService, useValue: { storeImage: jest.fn(), isDataUri: jest.fn().mockReturnValue(false) } },
-        { provide: SavingsService, useValue: { getLastInterestEarned: jest.fn().mockResolvedValue(null) } },
+        {
+          provide: StorageService,
+          useValue: {
+            storeImage: jest.fn(),
+            isDataUri: jest.fn().mockReturnValue(false),
+          },
+        },
+        {
+          provide: SavingsService,
+          useValue: {
+            getLastInterestEarned: jest.fn().mockResolvedValue(null),
+          },
+        },
+        { provide: MailerService, useValue: { sendMail: jest.fn() } },
+        { provide: AnalyticsService, useValue: { track: jest.fn() } },
       ],
     }).compile();
     service = module.get<UserService>(UserService);
@@ -56,12 +71,18 @@ describe('UserService.revealKycField', () => {
 
   it('returns the decrypted value on a correct PIN', async () => {
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-    const result = await service.revealKycField('user-1', { field: 'bvn', pin: '1234' });
+    const result = await service.revealKycField('user-1', {
+      field: 'bvn',
+      pin: '1234',
+    });
     expect(result.value).toBe('decrypted:enc-bvn-payload');
   });
 
   it('resets any prior failed-attempt count after a correct PIN', async () => {
-    prisma.user.findUnique.mockResolvedValue({ ...baseUser, kycRevealFailedAttempts: 3 });
+    prisma.user.findUnique.mockResolvedValue({
+      ...baseUser,
+      kycRevealFailedAttempts: 3,
+    });
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
     await service.revealKycField('user-1', { field: 'bvn', pin: '1234' });
     expect(prisma.user.update).toHaveBeenCalledWith({
@@ -71,9 +92,14 @@ describe('UserService.revealKycField', () => {
   });
 
   it('throws and increments the counter on a wrong PIN', async () => {
-    prisma.user.findUnique.mockResolvedValue({ ...baseUser, kycRevealFailedAttempts: 1 });
+    prisma.user.findUnique.mockResolvedValue({
+      ...baseUser,
+      kycRevealFailedAttempts: 1,
+    });
     (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-    await expect(service.revealKycField('user-1', { field: 'bvn', pin: '0000' })).rejects.toThrow(UnauthorizedException);
+    await expect(
+      service.revealKycField('user-1', { field: 'bvn', pin: '0000' }),
+    ).rejects.toThrow(UnauthorizedException);
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
       data: { kycRevealFailedAttempts: 2 },
@@ -81,31 +107,54 @@ describe('UserService.revealKycField', () => {
   });
 
   it('locks the account on the 5th consecutive wrong PIN', async () => {
-    prisma.user.findUnique.mockResolvedValue({ ...baseUser, kycRevealFailedAttempts: 4 });
+    prisma.user.findUnique.mockResolvedValue({
+      ...baseUser,
+      kycRevealFailedAttempts: 4,
+    });
     (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-    await expect(service.revealKycField('user-1', { field: 'bvn', pin: '0000' })).rejects.toThrow(UnauthorizedException);
+    await expect(
+      service.revealKycField('user-1', { field: 'bvn', pin: '0000' }),
+    ).rejects.toThrow(UnauthorizedException);
     const call = prisma.user.update.mock.calls[0][0];
     expect(call.data.kycRevealFailedAttempts).toBe(5);
     expect(call.data.kycRevealLockedUntil).toBeInstanceOf(Date);
-    expect(call.data.kycRevealLockedUntil.getTime()).toBeGreaterThan(Date.now());
+    expect(call.data.kycRevealLockedUntil.getTime()).toBeGreaterThan(
+      Date.now(),
+    );
   });
 
   it('rejects immediately while locked out, without checking the PIN at all', async () => {
-    prisma.user.findUnique.mockResolvedValue({ ...baseUser, kycRevealLockedUntil: new Date(Date.now() + 60_000) });
-    await expect(service.revealKycField('user-1', { field: 'bvn', pin: '1234' })).rejects.toThrow(UnauthorizedException);
+    prisma.user.findUnique.mockResolvedValue({
+      ...baseUser,
+      kycRevealLockedUntil: new Date(Date.now() + 60_000),
+    });
+    await expect(
+      service.revealKycField('user-1', { field: 'bvn', pin: '1234' }),
+    ).rejects.toThrow(UnauthorizedException);
     expect(bcrypt.compare).not.toHaveBeenCalled();
   });
 
   it('allows a reveal again once the lockout window has passed', async () => {
-    prisma.user.findUnique.mockResolvedValue({ ...baseUser, kycRevealLockedUntil: new Date(Date.now() - 1000) });
+    prisma.user.findUnique.mockResolvedValue({
+      ...baseUser,
+      kycRevealLockedUntil: new Date(Date.now() - 1000),
+    });
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-    const result = await service.revealKycField('user-1', { field: 'bvn', pin: '1234' });
+    const result = await service.revealKycField('user-1', {
+      field: 'bvn',
+      pin: '1234',
+    });
     expect(result.value).toBe('decrypted:enc-bvn-payload');
   });
 
   it('throws BadRequest when the requested field was never submitted', async () => {
-    prisma.user.findUnique.mockResolvedValue({ ...baseUser, ninEncrypted: null });
+    prisma.user.findUnique.mockResolvedValue({
+      ...baseUser,
+      ninEncrypted: null,
+    });
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-    await expect(service.revealKycField('user-1', { field: 'nin', pin: '1234' })).rejects.toThrow(BadRequestException);
+    await expect(
+      service.revealKycField('user-1', { field: 'nin', pin: '1234' }),
+    ).rejects.toThrow(BadRequestException);
   });
 });

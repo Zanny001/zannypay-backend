@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Patch, Param, Body, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Body,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RecurringTransfersService } from './recurring-transfers.service';
 import { CreateRecurringTransferDto } from './dto/create-recurring-transfer.dto';
@@ -9,7 +18,9 @@ import { CreateRecurringTransferDto } from './dto/create-recurring-transfer.dto'
 @Controller('recurring-transfers')
 @UseGuards(JwtAuthGuard)
 export class RecurringTransfersController {
-  constructor(private readonly recurringTransfersService: RecurringTransfersService) {}
+  constructor(
+    private readonly recurringTransfersService: RecurringTransfersService,
+  ) {}
 
   @Post()
   async create(@Req() req, @Body() dto: CreateRecurringTransferDto) {

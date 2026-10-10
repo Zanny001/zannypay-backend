@@ -11,6 +11,11 @@ export class CreateAdminDto {
   @MinLength(10)
   password: string;
 
-  @IsIn(['SUPER_ADMIN', 'COMPLIANCE_OFFICER', 'FINANCE_OFFICER', 'SUPPORT_AGENT'])
+  @IsIn([
+    'SUPER_ADMIN',
+    'COMPLIANCE_OFFICER',
+    'FINANCE_OFFICER',
+    'SUPPORT_AGENT',
+  ])
   role: string;
 }

@@ -12,7 +12,14 @@ describe('LoansService', () => {
       providers: [
         LoansService,
         { provide: PrismaService, useValue: {} },
-        { provide: LedgerService, useValue: { getOrCreateCustomerAccount: jest.fn(), getOrCreateSystemAccount: jest.fn(), postJournal: jest.fn() } },
+        {
+          provide: LedgerService,
+          useValue: {
+            getOrCreateCustomerAccount: jest.fn(),
+            getOrCreateSystemAccount: jest.fn(),
+            postJournal: jest.fn(),
+          },
+        },
         { provide: AnalyticsService, useValue: { track: jest.fn() } },
       ],
     }).compile();

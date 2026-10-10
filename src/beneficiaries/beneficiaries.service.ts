@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
@@ -18,7 +22,11 @@ export class BeneficiariesService {
   async list(userId: string) {
     return this.prisma.beneficiary.findMany({
       where: { userId },
-      orderBy: [{ isFavorite: 'desc' }, { lastPaidAt: 'desc' }, { createdAt: 'desc' }],
+      orderBy: [
+        { isFavorite: 'desc' },
+        { lastPaidAt: 'desc' },
+        { createdAt: 'desc' },
+      ],
     });
   }
 
@@ -28,7 +36,9 @@ export class BeneficiariesService {
     // should feel idempotent, not throw a 409 the second time someone
     // pays the same person.
     return this.prisma.beneficiary.upsert({
-      where: { userId_accountNumber: { userId, accountNumber: dto.accountNumber } },
+      where: {
+        userId_accountNumber: { userId, accountNumber: dto.accountNumber },
+      },
       update: {
         name: dto.name,
         bank: dto.bank,
@@ -47,7 +57,9 @@ export class BeneficiariesService {
   }
 
   async update(userId: string, id: string, dto: UpdateBeneficiaryDto) {
-    const beneficiary = await this.prisma.beneficiary.findUnique({ where: { id } });
+    const beneficiary = await this.prisma.beneficiary.findUnique({
+      where: { id },
+    });
     if (!beneficiary) throw new NotFoundException('Beneficiary not found.');
     if (beneficiary.userId !== userId) throw new ForbiddenException();
 
@@ -61,7 +73,9 @@ export class BeneficiariesService {
   }
 
   async remove(userId: string, id: string) {
-    const beneficiary = await this.prisma.beneficiary.findUnique({ where: { id } });
+    const beneficiary = await this.prisma.beneficiary.findUnique({
+      where: { id },
+    });
     if (!beneficiary) throw new NotFoundException('Beneficiary not found.');
     if (beneficiary.userId !== userId) throw new ForbiddenException();
 
@@ -78,7 +92,10 @@ export class BeneficiariesService {
    */
   async recordPaymentIfSaved(userId: string, accountNumber: string) {
     await this.prisma.beneficiary
-      .updateMany({ where: { userId, accountNumber }, data: { lastPaidAt: new Date() } })
+      .updateMany({
+        where: { userId, accountNumber },
+        data: { lastPaidAt: new Date() },
+      })
       .catch(() => undefined); // best-effort bookkeeping — must never fail a transfer that already succeeded
   }
 }

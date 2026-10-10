@@ -10,7 +10,9 @@ import { join } from 'path';
 async function bootstrap() {
   // bodyParser: false lets us set a higher size limit below — the default
   // 100kb Express limit rejects a base64-encoded profile picture outright.
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
   app.use(json({ limit: '6mb' }));
   app.use(urlencoded({ extended: true, limit: '6mb' }));
 
@@ -72,4 +74,4 @@ async function bootstrap() {
       : '⚠️  Admin IP allowlist enforcement is OFF (set ADMIN_IP_ALLOWLIST_ENFORCE=true when ready).',
   );
 }
-bootstrap();
+void bootstrap();

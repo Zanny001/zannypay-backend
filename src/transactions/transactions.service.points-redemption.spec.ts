@@ -25,30 +25,60 @@ describe('TransactionsService.resolvePointsRedemption', () => {
         { provide: MailerService, useValue: { sendMail: jest.fn() } },
         { provide: FraudService, useValue: { evaluateTransaction: jest.fn() } },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
-        { provide: BeneficiariesService, useValue: { recordPaymentIfSaved: jest.fn() } },
-        { provide: LedgerService, useValue: { getOrCreateCustomerAccount: jest.fn(), getOrCreateSystemAccount: jest.fn(), postJournal: jest.fn() } },
+        {
+          provide: BeneficiariesService,
+          useValue: { recordPaymentIfSaved: jest.fn() },
+        },
+        {
+          provide: LedgerService,
+          useValue: {
+            getOrCreateCustomerAccount: jest.fn(),
+            getOrCreateSystemAccount: jest.fn(),
+            postJournal: jest.fn(),
+          },
+        },
         { provide: AnalyticsService, useValue: { track: jest.fn() } },
       ],
     }).compile();
     service = module.get<TransactionsService>(TransactionsService);
   });
 
-  const resolve = (rewardPoints: number, amount: number, pointsToRedeem?: number) =>
-    (service as any).resolvePointsRedemption({ rewardPoints }, amount, pointsToRedeem);
+  const resolve = (
+    rewardPoints: number,
+    amount: number,
+    pointsToRedeem?: number,
+  ) =>
+    (service as any).resolvePointsRedemption(
+      { rewardPoints },
+      amount,
+      pointsToRedeem,
+    );
 
   it('charges the full amount to the wallet when no points are redeemed', () => {
-    expect(resolve(1000, 2000, undefined)).toEqual({ walletCharge: 2000, pointsToRedeem: 0 });
-    expect(resolve(1000, 2000, 0)).toEqual({ walletCharge: 2000, pointsToRedeem: 0 });
+    expect(resolve(1000, 2000, undefined)).toEqual({
+      walletCharge: 2000,
+      pointsToRedeem: 0,
+    });
+    expect(resolve(1000, 2000, 0)).toEqual({
+      walletCharge: 2000,
+      pointsToRedeem: 0,
+    });
   });
 
   it('reduces the wallet charge by the naira value of points redeemed, at 10 points = ₦1', () => {
     // 500 points = ₦50 off a ₦2000 bill
-    expect(resolve(1000, 2000, 500)).toEqual({ walletCharge: 1950, pointsToRedeem: 500 });
+    expect(resolve(1000, 2000, 500)).toEqual({
+      walletCharge: 1950,
+      pointsToRedeem: 500,
+    });
   });
 
   it('allows redeeming exactly enough points to cover the entire amount', () => {
     // 20,000 points = ₦2000, exactly the bill
-    expect(resolve(25000, 2000, 20000)).toEqual({ walletCharge: 0, pointsToRedeem: 20000 });
+    expect(resolve(25000, 2000, 20000)).toEqual({
+      walletCharge: 0,
+      pointsToRedeem: 20000,
+    });
   });
 
   it('rejects redeeming more points than the user actually has', () => {

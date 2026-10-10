@@ -12,7 +12,9 @@ export class BudgetsService {
 
   async setBudget(userId: string, category: string, monthlyLimit: number) {
     if (!category || !monthlyLimit || monthlyLimit <= 0) {
-      throw new BadRequestException('Provide a category and a valid monthly limit.');
+      throw new BadRequestException(
+        'Provide a category and a valid monthly limit.',
+      );
     }
 
     const budget = await this.prisma.budget.upsert({

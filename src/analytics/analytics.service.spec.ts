@@ -12,7 +12,7 @@ describe('AnalyticsService', () => {
         findMany: jest.fn(),
       },
     };
-    service = new AnalyticsService(prisma as any);
+    service = new AnalyticsService(prisma);
   });
 
   describe('track', () => {
@@ -26,17 +26,29 @@ describe('AnalyticsService', () => {
       });
 
       expect(prisma.analyticsEvent.create).toHaveBeenCalledWith({
-        data: { name: 'transfer_completed', userId: 'user-1', platform: 'backend', properties: { amount: 5000 } },
+        data: {
+          name: 'transfer_completed',
+          userId: 'user-1',
+          platform: 'backend',
+          properties: { amount: 5000 },
+        },
       });
     });
 
     it('defaults platform to "backend" and properties to {} when not provided', async () => {
       prisma.analyticsEvent.create.mockResolvedValue({});
 
-      await service.track(ANALYTICS_EVENTS.SIGNUP_COMPLETED, { userId: 'user-1' });
+      await service.track(ANALYTICS_EVENTS.SIGNUP_COMPLETED, {
+        userId: 'user-1',
+      });
 
       expect(prisma.analyticsEvent.create).toHaveBeenCalledWith({
-        data: { name: 'signup_completed', userId: 'user-1', platform: 'backend', properties: {} },
+        data: {
+          name: 'signup_completed',
+          userId: 'user-1',
+          platform: 'backend',
+          properties: {},
+        },
       });
     });
 
@@ -48,9 +60,15 @@ describe('AnalyticsService', () => {
     // those call sites is at risk of a dropped analytics write turning
     // into a failed transfer.
     it('never throws, even when the database write fails', async () => {
-      prisma.analyticsEvent.create.mockRejectedValue(new Error('connection lost'));
+      prisma.analyticsEvent.create.mockRejectedValue(
+        new Error('connection lost'),
+      );
 
-      await expect(service.track(ANALYTICS_EVENTS.TRANSFER_COMPLETED, { userId: 'user-1' })).resolves.toBeUndefined();
+      await expect(
+        service.track(ANALYTICS_EVENTS.TRANSFER_COMPLETED, {
+          userId: 'user-1',
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 
@@ -81,9 +99,15 @@ describe('AnalyticsService', () => {
   describe('getUniqueUserCount', () => {
     it('counts distinct users, not total events', async () => {
       // Same user fired the event twice — should still count once.
-      prisma.analyticsEvent.findMany.mockResolvedValue([{ userId: 'user-1' }, { userId: 'user-2' }]);
+      prisma.analyticsEvent.findMany.mockResolvedValue([
+        { userId: 'user-1' },
+        { userId: 'user-2' },
+      ]);
 
-      const count = await service.getUniqueUserCount(ANALYTICS_EVENTS.TRANSFER_COMPLETED, 30);
+      const count = await service.getUniqueUserCount(
+        ANALYTICS_EVENTS.TRANSFER_COMPLETED,
+        30,
+      );
 
       expect(count).toBe(2);
       expect(prisma.analyticsEvent.findMany).toHaveBeenCalledWith(

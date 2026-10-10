@@ -46,28 +46,32 @@ export class FraudService implements OnModuleInit {
       data: [
         {
           name: 'VELOCITY_COUNT',
-          description: 'More than N debit transactions from one user within a short window.',
+          description:
+            'More than N debit transactions from one user within a short window.',
           severity: 'MEDIUM',
           config: { windowMinutes: 10, maxDebitCount: 5 },
           autoFreeze: false,
         },
         {
           name: 'VELOCITY_AMOUNT',
-          description: 'Total debit volume from one user exceeds a threshold within a window.',
+          description:
+            'Total debit volume from one user exceeds a threshold within a window.',
           severity: 'HIGH',
           config: { windowMinutes: 60, maxDebitAmount: 500000 },
           autoFreeze: false,
         },
         {
           name: 'LARGE_SINGLE_TRANSACTION',
-          description: 'A single transaction exceeds an absolute amount threshold.',
+          description:
+            'A single transaction exceeds an absolute amount threshold.',
           severity: 'HIGH',
           config: { maxAmount: 1000000 },
           autoFreeze: false,
         },
         {
           name: 'NEW_RECIPIENT_LARGE_TRANSFER',
-          description: 'A large transfer to a recipient this sender has never sent to before.',
+          description:
+            'A large transfer to a recipient this sender has never sent to before.',
           severity: 'MEDIUM',
           config: { maxAmount: 300000 },
           autoFreeze: false,
@@ -77,14 +81,24 @@ export class FraudService implements OnModuleInit {
           description:
             'Multiple transfers just under a round threshold in a short window — a classic structuring/"smurfing" signature.',
           severity: 'CRITICAL',
-          config: { windowMinutes: 60, minOccurrences: 3, thresholdAmount: 500000, bandPercentage: 10 },
+          config: {
+            windowMinutes: 60,
+            minOccurrences: 3,
+            thresholdAmount: 500000,
+            bandPercentage: 10,
+          },
           autoFreeze: true,
         },
         {
           name: 'RAPID_FUND_AND_DRAIN',
-          description: 'A large wallet top-up immediately followed by draining most of it back out — a mule-account signature.',
+          description:
+            'A large wallet top-up immediately followed by draining most of it back out — a mule-account signature.',
           severity: 'CRITICAL',
-          config: { windowMinutes: 30, minFundingAmount: 200000, minDrainPercentage: 80 },
+          config: {
+            windowMinutes: 30,
+            minFundingAmount: 200000,
+            minDrainPercentage: 80,
+          },
           autoFreeze: true,
         },
       ],
@@ -101,19 +115,33 @@ export class FraudService implements OnModuleInit {
   // ==========================================
   async evaluateTransaction(transaction: EvaluatedTransaction) {
     try {
-      const rules = await this.prisma.fraudRule.findMany({ where: { isEnabled: true } });
+      const rules = await this.prisma.fraudRule.findMany({
+        where: { isEnabled: true },
+      });
       for (const rule of rules) {
-        const result = await this.runRule(rule.name, rule.config as Record<string, any>, transaction);
+        const result = await this.runRule(
+          rule.name,
+          rule.config as Record<string, any>,
+          transaction,
+        );
         if (result.triggered) {
           await this.raiseAlert(rule, transaction, result.details || {});
         }
       }
     } catch (error) {
-      console.error('[FraudEngine] Evaluation failed for transaction', transaction.id, error);
+      console.error(
+        '[FraudEngine] Evaluation failed for transaction',
+        transaction.id,
+        error,
+      );
     }
   }
 
-  private async runRule(ruleName: string, config: Record<string, any>, transaction: EvaluatedTransaction): Promise<RuleResult> {
+  private async runRule(
+    ruleName: string,
+    config: Record<string, any>,
+    transaction: EvaluatedTransaction,
+  ): Promise<RuleResult> {
     switch (ruleName) {
       case 'VELOCITY_COUNT':
         return this.ruleVelocityCount(transaction.userId, config);
@@ -136,7 +164,10 @@ export class FraudService implements OnModuleInit {
     }
   }
 
-  private async ruleVelocityCount(userId: string, config: Record<string, any>): Promise<RuleResult> {
+  private async ruleVelocityCount(
+    userId: string,
+    config: Record<string, any>,
+  ): Promise<RuleResult> {
     const windowMinutes = Number(config.windowMinutes) || 10;
     const maxDebitCount = Number(config.maxDebitCount) || 5;
     const since = new Date(Date.now() - windowMinutes * 60 * 1000);
@@ -146,12 +177,18 @@ export class FraudService implements OnModuleInit {
     });
 
     if (actualCount > maxDebitCount) {
-      return { triggered: true, details: { windowMinutes, maxDebitCount, actualCount } };
+      return {
+        triggered: true,
+        details: { windowMinutes, maxDebitCount, actualCount },
+      };
     }
     return { triggered: false };
   }
 
-  private async ruleVelocityAmount(userId: string, config: Record<string, any>): Promise<RuleResult> {
+  private async ruleVelocityAmount(
+    userId: string,
+    config: Record<string, any>,
+  ): Promise<RuleResult> {
     const windowMinutes = Number(config.windowMinutes) || 60;
     const maxDebitAmount = Number(config.maxDebitAmount) || 500000;
     const since = new Date(Date.now() - windowMinutes * 60 * 1000);
@@ -163,12 +200,18 @@ export class FraudService implements OnModuleInit {
     const actualTotal = Number(agg._sum.amount || 0);
 
     if (actualTotal > maxDebitAmount) {
-      return { triggered: true, details: { windowMinutes, maxDebitAmount, actualTotal } };
+      return {
+        triggered: true,
+        details: { windowMinutes, maxDebitAmount, actualTotal },
+      };
     }
     return { triggered: false };
   }
 
-  private ruleLargeSingleTransaction(transaction: EvaluatedTransaction, config: Record<string, any>): RuleResult {
+  private ruleLargeSingleTransaction(
+    transaction: EvaluatedTransaction,
+    config: Record<string, any>,
+  ): RuleResult {
     const maxAmount = Number(config.maxAmount) || 1000000;
     const actualAmount = Number(transaction.amount);
 
@@ -178,8 +221,15 @@ export class FraudService implements OnModuleInit {
     return { triggered: false };
   }
 
-  private async ruleNewRecipientLargeTransfer(transaction: EvaluatedTransaction, config: Record<string, any>): Promise<RuleResult> {
-    if (transaction.type !== 'debit' || transaction.category !== 'transfer' || !transaction.recipientAccount) {
+  private async ruleNewRecipientLargeTransfer(
+    transaction: EvaluatedTransaction,
+    config: Record<string, any>,
+  ): Promise<RuleResult> {
+    if (
+      transaction.type !== 'debit' ||
+      transaction.category !== 'transfer' ||
+      !transaction.recipientAccount
+    ) {
       return { triggered: false };
     }
     const maxAmount = Number(config.maxAmount) || 300000;
@@ -200,13 +250,21 @@ export class FraudService implements OnModuleInit {
     if (priorTransferCount === 0) {
       return {
         triggered: true,
-        details: { maxAmount, actualAmount, recipientAccount: transaction.recipientAccount, note: 'First-ever transfer to this recipient' },
+        details: {
+          maxAmount,
+          actualAmount,
+          recipientAccount: transaction.recipientAccount,
+          note: 'First-ever transfer to this recipient',
+        },
       };
     }
     return { triggered: false };
   }
 
-  private async ruleStructuringPattern(userId: string, config: Record<string, any>): Promise<RuleResult> {
+  private async ruleStructuringPattern(
+    userId: string,
+    config: Record<string, any>,
+  ): Promise<RuleResult> {
     const windowMinutes = Number(config.windowMinutes) || 60;
     const minOccurrences = Number(config.minOccurrences) || 3;
     const thresholdAmount = Number(config.thresholdAmount) || 500000;
@@ -242,36 +300,61 @@ export class FraudService implements OnModuleInit {
     return { triggered: false };
   }
 
-  private async ruleRapidFundAndDrain(userId: string, config: Record<string, any>): Promise<RuleResult> {
+  private async ruleRapidFundAndDrain(
+    userId: string,
+    config: Record<string, any>,
+  ): Promise<RuleResult> {
     const windowMinutes = Number(config.windowMinutes) || 30;
     const minFundingAmount = Number(config.minFundingAmount) || 200000;
     const minDrainPercentage = Number(config.minDrainPercentage) || 80;
     const since = new Date(Date.now() - windowMinutes * 60 * 1000);
 
     const recentFunding = await this.prisma.transaction.findFirst({
-      where: { userId, type: 'credit', category: 'funding', status: 'completed', amount: { gte: minFundingAmount }, createdAt: { gte: since } },
+      where: {
+        userId,
+        type: 'credit',
+        category: 'funding',
+        status: 'completed',
+        amount: { gte: minFundingAmount },
+        createdAt: { gte: since },
+      },
       orderBy: { createdAt: 'desc' },
     });
     if (!recentFunding) return { triggered: false };
 
     const drainAgg = await this.prisma.transaction.aggregate({
       _sum: { amount: true },
-      where: { userId, type: 'debit', createdAt: { gte: recentFunding.createdAt } },
+      where: {
+        userId,
+        type: 'debit',
+        createdAt: { gte: recentFunding.createdAt },
+      },
     });
     const drained = Number(drainAgg._sum.amount || 0);
     const fundedAmount = Number(recentFunding.amount);
-    const drainPercentage = fundedAmount > 0 ? (drained / fundedAmount) * 100 : 0;
+    const drainPercentage =
+      fundedAmount > 0 ? (drained / fundedAmount) * 100 : 0;
 
     if (drainPercentage >= minDrainPercentage) {
       return {
         triggered: true,
-        details: { windowMinutes, fundedAmount, drained, drainPercentage: Math.round(drainPercentage), fundingTransactionId: recentFunding.id },
+        details: {
+          windowMinutes,
+          fundedAmount,
+          drained,
+          drainPercentage: Math.round(drainPercentage),
+          fundingTransactionId: recentFunding.id,
+        },
       };
     }
     return { triggered: false };
   }
 
-  private async raiseAlert(rule: { id: string; name: string; severity: string; autoFreeze: boolean }, transaction: EvaluatedTransaction, details: Record<string, any>) {
+  private async raiseAlert(
+    rule: { id: string; name: string; severity: string; autoFreeze: boolean },
+    transaction: EvaluatedTransaction,
+    details: Record<string, any>,
+  ) {
     const alert = await this.prisma.fraudAlert.create({
       data: {
         userId: transaction.userId,
@@ -282,12 +365,20 @@ export class FraudService implements OnModuleInit {
       },
     });
 
-    await this.prisma.transaction.update({ where: { id: transaction.id }, data: { flagged: true } }).catch(() => {});
+    await this.prisma.transaction
+      .update({ where: { id: transaction.id }, data: { flagged: true } })
+      .catch(() => {});
 
     let autoFroze = false;
     if (rule.autoFreeze) {
-      await this.prisma.user.update({ where: { id: transaction.userId }, data: { isFrozen: true } });
-      await this.prisma.fraudAlert.update({ where: { id: alert.id }, data: { autoFrozeAccount: true } });
+      await this.prisma.user.update({
+        where: { id: transaction.userId },
+        data: { isFrozen: true },
+      });
+      await this.prisma.fraudAlert.update({
+        where: { id: alert.id },
+        data: { autoFrozeAccount: true },
+      });
       autoFroze = true;
 
       // Deliberately generic — never names the rule or exposes `details`
@@ -309,10 +400,19 @@ export class FraudService implements OnModuleInit {
       action: 'FRAUD_RULE_TRIGGERED',
       targetType: 'User',
       targetId: transaction.userId,
-      metadata: { ruleName: rule.name, severity: rule.severity, details, autoFroze, alertId: alert.id },
+      metadata: {
+        ruleName: rule.name,
+        severity: rule.severity,
+        details,
+        autoFroze,
+        alertId: alert.id,
+      },
     });
 
-    if (['HIGH', 'CRITICAL'].includes(rule.severity) && process.env.COMPLIANCE_ALERT_EMAIL) {
+    if (
+      ['HIGH', 'CRITICAL'].includes(rule.severity) &&
+      process.env.COMPLIANCE_ALERT_EMAIL
+    ) {
       this.mailerService
         .sendMail({
           to: process.env.COMPLIANCE_ALERT_EMAIL,
@@ -333,7 +433,13 @@ export class FraudService implements OnModuleInit {
   // ==========================================
   // Admin-facing: alert review queue
   // ==========================================
-  async listAlerts(filters: { status?: string; severity?: string; userId?: string; page?: number; pageSize?: number }) {
+  async listAlerts(filters: {
+    status?: string;
+    severity?: string;
+    userId?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
     const page = filters.page || 1;
     const pageSize = filters.pageSize || 50;
     const where = {
@@ -345,7 +451,9 @@ export class FraudService implements OnModuleInit {
     const [alerts, total] = await Promise.all([
       this.prisma.fraudAlert.findMany({
         where,
-        include: { user: { select: { name: true, accountNumber: true, phone: true } } },
+        include: {
+          user: { select: { name: true, accountNumber: true, phone: true } },
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -364,21 +472,37 @@ export class FraudService implements OnModuleInit {
     unfreezeIfDismissed?: boolean,
     ip?: string,
   ) {
-    const alert = await this.prisma.fraudAlert.findUnique({ where: { id: alertId } });
+    const alert = await this.prisma.fraudAlert.findUnique({
+      where: { id: alertId },
+    });
     if (!alert) throw new NotFoundException('Fraud alert not found.');
 
     const updated = await this.prisma.fraudAlert.update({
       where: { id: alertId },
-      data: { status: decision, reviewedByAdminId: actingAdminId, reviewNote: note },
+      data: {
+        status: decision,
+        reviewedByAdminId: actingAdminId,
+        reviewNote: note,
+      },
     });
 
-    if (decision === 'dismissed' && alert.autoFrozeAccount && unfreezeIfDismissed) {
-      await this.prisma.user.update({ where: { id: alert.userId }, data: { isFrozen: false } });
+    if (
+      decision === 'dismissed' &&
+      alert.autoFrozeAccount &&
+      unfreezeIfDismissed
+    ) {
+      await this.prisma.user.update({
+        where: { id: alert.userId },
+        data: { isFrozen: false },
+      });
     }
 
     await this.auditLog.record({
       adminId: actingAdminId,
-      action: decision === 'confirmed' ? 'CONFIRM_FRAUD_ALERT' : 'DISMISS_FRAUD_ALERT',
+      action:
+        decision === 'confirmed'
+          ? 'CONFIRM_FRAUD_ALERT'
+          : 'DISMISS_FRAUD_ALERT',
       targetType: 'FraudAlert',
       targetId: alertId,
       metadata: { note, unfreezeIfDismissed },
@@ -399,7 +523,12 @@ export class FraudService implements OnModuleInit {
   async updateRule(
     actingAdminId: string,
     ruleId: string,
-    dto: { isEnabled?: boolean; severity?: string; config?: Record<string, any>; autoFreeze?: boolean },
+    dto: {
+      isEnabled?: boolean;
+      severity?: string;
+      config?: Record<string, any>;
+      autoFreeze?: boolean;
+    },
     ip?: string,
   ) {
     const rule = await this.prisma.fraudRule.update({

@@ -1,6 +1,11 @@
 import { IsIn, IsString, MaxLength, MinLength } from 'class-validator';
 
-export const INTERNAL_NOTE_TARGET_TYPES = ['User', 'Dispute', 'Transaction', 'FraudAlert'] as const;
+export const INTERNAL_NOTE_TARGET_TYPES = [
+  'User',
+  'Dispute',
+  'Transaction',
+  'FraudAlert',
+] as const;
 
 export class CreateInternalNoteDto {
   @IsIn(INTERNAL_NOTE_TARGET_TYPES)

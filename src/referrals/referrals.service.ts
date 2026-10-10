@@ -45,8 +45,12 @@ export class ReferralsService {
       _count: { referredBy: true },
     });
 
-    const codes = grouped.map((g) => g.referredBy).filter((c): c is string => !!c);
-    const countByCode = Object.fromEntries(grouped.map((g) => [g.referredBy, g._count.referredBy]));
+    const codes = grouped
+      .map((g) => g.referredBy)
+      .filter((c): c is string => !!c);
+    const countByCode = Object.fromEntries(
+      grouped.map((g) => [g.referredBy, g._count.referredBy]),
+    );
 
     const referrers = codes.length
       ? await this.prisma.user.findMany({
@@ -56,11 +60,20 @@ export class ReferralsService {
       : [];
 
     const ranked = referrers
-      .map((u) => ({ id: u.id, name: maskName(u.name), count: countByCode[u.referralCode!] || 0 }))
+      .map((u) => ({
+        id: u.id,
+        name: maskName(u.name),
+        count: countByCode[u.referralCode] || 0,
+      }))
       .sort((a, b) => b.count - a.count);
 
-    const me = await this.prisma.user.findUnique({ where: { id: userId }, select: { referralCode: true } });
-    const myRankIndex = me?.referralCode ? ranked.findIndex((r) => r.id === userId) : -1;
+    const me = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { referralCode: true },
+    });
+    const myRankIndex = me?.referralCode
+      ? ranked.findIndex((r) => r.id === userId)
+      : -1;
 
     // Real recent signups that came through a referral, most recent first —
     // this is the "live activity" feed; nothing here is generated, it's
@@ -76,7 +89,10 @@ export class ReferralsService {
       leaderboard: ranked.slice(0, 10),
       myRank: myRankIndex >= 0 ? myRankIndex + 1 : null,
       myCount: myRankIndex >= 0 ? ranked[myRankIndex].count : 0,
-      recentActivity: recentActivity.map((u) => ({ name: maskName(u.name), joinedAt: u.createdAt })),
+      recentActivity: recentActivity.map((u) => ({
+        name: maskName(u.name),
+        joinedAt: u.createdAt,
+      })),
     };
   }
 }

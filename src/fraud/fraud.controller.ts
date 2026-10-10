@@ -1,4 +1,13 @@
-import { Controller, Get, Patch, Body, Param, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { FraudService } from './fraud.service';
 import { AdminIpAllowlistGuard } from '../admin-security/admin-ip-allowlist.guard';
 import { AdminJwtAuthGuard } from '../admin-auth/admin-jwt-auth.guard';
@@ -9,7 +18,12 @@ import { ReviewFraudAlertDto } from './dto/review-fraud-alert.dto';
 import { UpdateFraudRuleDto } from './dto/update-fraud-rule.dto';
 
 @Controller('admin/fraud')
-@UseGuards(AdminIpAllowlistGuard, AdminJwtAuthGuard, RolesGuard, Require2faGuard)
+@UseGuards(
+  AdminIpAllowlistGuard,
+  AdminJwtAuthGuard,
+  RolesGuard,
+  Require2faGuard,
+)
 export class FraudController {
   constructor(private readonly fraudService: FraudService) {}
 
@@ -33,8 +47,19 @@ export class FraudController {
 
   @Roles('SUPER_ADMIN', 'COMPLIANCE_OFFICER', 'FINANCE_OFFICER')
   @Patch('alerts/:id')
-  async reviewAlert(@Req() req, @Param('id') id: string, @Body() dto: ReviewFraudAlertDto) {
-    return this.fraudService.reviewAlert(req.user.adminId, id, dto.decision, dto.note, dto.unfreezeIfDismissed, req.ip);
+  async reviewAlert(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: ReviewFraudAlertDto,
+  ) {
+    return this.fraudService.reviewAlert(
+      req.user.adminId,
+      id,
+      dto.decision,
+      dto.note,
+      dto.unfreezeIfDismissed,
+      req.ip,
+    );
   }
 
   @Roles('SUPER_ADMIN', 'COMPLIANCE_OFFICER')
@@ -48,7 +73,11 @@ export class FraudController {
   // can view and tune the review queue above, but not the rule definitions.
   @Roles('SUPER_ADMIN')
   @Patch('rules/:id')
-  async updateRule(@Req() req, @Param('id') id: string, @Body() dto: UpdateFraudRuleDto) {
+  async updateRule(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: UpdateFraudRuleDto,
+  ) {
     return this.fraudService.updateRule(req.user.adminId, id, dto, req.ip);
   }
 }

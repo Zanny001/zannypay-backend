@@ -1,5 +1,8 @@
 import { Global, Module } from '@nestjs/common';
-import { AnalyticsController, AdminAnalyticsController } from './analytics.controller';
+import {
+  AnalyticsController,
+  AdminAnalyticsController,
+} from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { AdminSecurityModule } from '../admin-security/admin-security.module';
 

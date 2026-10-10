@@ -1,13 +1,21 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SanctionsScreeningService } from '../screening/sanctions-screening.provider';
 import { LedgerService } from '../ledger/ledger.service';
 import { LedgerAccountType, LedgerDirection } from '@prisma/client';
-import { AnalyticsService, ANALYTICS_EVENTS } from '../analytics/analytics.service';
+import {
+  AnalyticsService,
+  ANALYTICS_EVENTS,
+} from '../analytics/analytics.service';
 import { formatNaira } from '../common/format-currency.util';
-import * as bcrypt from 'bcryptjs';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AdminService {
@@ -25,36 +33,81 @@ export class AdminService {
   // ==========================================
   async listAdmins() {
     return this.prisma.adminUser.findMany({
-      select: { id: true, name: true, email: true, role: true, isActive: true, lastLoginAt: true, createdAt: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async createAdmin(actingAdminId: string, dto: { name: string; email: string; password: string; role: string }, ip?: string) {
-    const existing = await this.prisma.adminUser.findUnique({ where: { email: dto.email } });
-    if (existing) throw new ConflictException('An admin with this email already exists.');
+  async createAdmin(
+    actingAdminId: string,
+    dto: { name: string; email: string; password: string; role: string },
+    ip?: string,
+  ) {
+    const existing = await this.prisma.adminUser.findUnique({
+      where: { email: dto.email },
+    });
+    if (existing)
+      throw new ConflictException('An admin with this email already exists.');
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     const admin = await this.prisma.adminUser.create({
-      data: { name: dto.name, email: dto.email, password: hashedPassword, role: dto.role as any },
+      data: {
+        name: dto.name,
+        email: dto.email,
+        password: hashedPassword,
+        role: dto.role as any,
+      },
     });
 
     await this.auditLog.record({
-      adminId: actingAdminId, action: 'CREATE_ADMIN', targetType: 'AdminUser', targetId: admin.id,
-      metadata: { name: dto.name, email: dto.email, role: dto.role }, ipAddress: ip,
+      adminId: actingAdminId,
+      action: 'CREATE_ADMIN',
+      targetType: 'AdminUser',
+      targetId: admin.id,
+      metadata: { name: dto.name, email: dto.email, role: dto.role },
+      ipAddress: ip,
     });
 
-    return { success: true, admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role } };
+    return {
+      success: true,
+      admin: {
+        id: admin.id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+      },
+    };
   }
 
-  async deactivateAdmin(actingAdminId: string, targetAdminId: string, ip?: string) {
+  async deactivateAdmin(
+    actingAdminId: string,
+    targetAdminId: string,
+    ip?: string,
+  ) {
     if (actingAdminId === targetAdminId) {
-      throw new BadRequestException('You cannot deactivate your own admin account.');
+      throw new BadRequestException(
+        'You cannot deactivate your own admin account.',
+      );
     }
-    const admin = await this.prisma.adminUser.update({ where: { id: targetAdminId }, data: { isActive: false } });
+    const admin = await this.prisma.adminUser.update({
+      where: { id: targetAdminId },
+      data: { isActive: false },
+    });
 
     await this.auditLog.record({
-      adminId: actingAdminId, action: 'DEACTIVATE_ADMIN', targetType: 'AdminUser', targetId: targetAdminId, ipAddress: ip,
+      adminId: actingAdminId,
+      action: 'DEACTIVATE_ADMIN',
+      targetType: 'AdminUser',
+      targetId: targetAdminId,
+      ipAddress: ip,
     });
 
     return { success: true, admin: { id: admin.id, isActive: admin.isActive } };
@@ -84,8 +137,15 @@ export class AdminService {
       this.prisma.user.findMany({
         where,
         select: {
-          id: true, name: true, email: true, phone: true, accountNumber: true,
-          kycTier: true, kycStatus: true, isFrozen: true, createdAt: true,
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          accountNumber: true,
+          kycTier: true,
+          kycStatus: true,
+          isFrozen: true,
+          createdAt: true,
           wallet: { select: { balance: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -111,12 +171,28 @@ export class AdminService {
       },
     });
     if (!user) throw new NotFoundException('User not found.');
-    const { pin, bvnEncrypted, ninEncrypted, kycRevealFailedAttempts, kycRevealLockedUntil, ...safeUser } = user;
+    const {
+      pin,
+      bvnEncrypted,
+      ninEncrypted,
+      kycRevealFailedAttempts,
+      kycRevealLockedUntil,
+      ...safeUser
+    } = user;
     return safeUser;
   }
 
-  async setUserFrozen(actingAdminId: string, userId: string, isFrozen: boolean, reason: string, ip?: string) {
-    const user = await this.prisma.user.update({ where: { id: userId }, data: { isFrozen } });
+  async setUserFrozen(
+    actingAdminId: string,
+    userId: string,
+    isFrozen: boolean,
+    reason: string,
+    ip?: string,
+  ) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { isFrozen },
+    });
 
     await this.auditLog.record({
       adminId: actingAdminId,
@@ -130,7 +206,9 @@ export class AdminService {
     await this.notifications.create(
       userId,
       isFrozen ? 'account_frozen' : 'account_unfrozen',
-      isFrozen ? 'Your account has been restricted' : 'Your account has been reactivated',
+      isFrozen
+        ? 'Your account has been restricted'
+        : 'Your account has been reactivated',
       isFrozen
         ? `Your account was restricted. Reason: ${reason}. Contact support if you believe this is a mistake.`
         : 'Your account is fully active again.',
@@ -147,23 +225,41 @@ export class AdminService {
     return this.prisma.user.findMany({
       where: { kycStatus: 'pending' },
       select: {
-        id: true, name: true, phone: true, email: true, bvnLast4: true, ninLast4: true,
-        nextOfKinName: true, nextOfKinPhone: true, dateOfBirth: true,
-        nationality: true, createdAt: true,
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        bvnLast4: true,
+        ninLast4: true,
+        nextOfKinName: true,
+        nextOfKinPhone: true,
+        dateOfBirth: true,
+        nationality: true,
+        createdAt: true,
       },
-      orderBy: { createdAt: 'asc' }, 
+      orderBy: { createdAt: 'asc' },
     });
   }
 
-  async decideKyc(actingAdminId: string, userId: string, decision: 'approve' | 'reject', reason?: string, ip?: string) {
+  async decideKyc(
+    actingAdminId: string,
+    userId: string,
+    decision: 'approve' | 'reject',
+    reason?: string,
+    ip?: string,
+  ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found.');
     if (user.kycStatus !== 'pending') {
-      throw new BadRequestException('This user has no pending KYC submission to review.');
+      throw new BadRequestException(
+        'This user has no pending KYC submission to review.',
+      );
     }
 
     if (decision === 'reject' && !reason) {
-      throw new BadRequestException('A reason is required when rejecting a KYC submission.');
+      throw new BadRequestException(
+        'A reason is required when rejecting a KYC submission.',
+      );
     }
 
     // Master audit: sanctions/PEP screening was entirely absent from the
@@ -176,13 +272,23 @@ export class AdminService {
     // on why the mock provider's verdict isn't safe to treat as a real
     // compliance signal; a real provider integration is what should decide
     // whether a match becomes a hard stop.
-    const screening = await this.sanctionsScreening.screenAndRecord(userId, user.name, user.dateOfBirth?.toISOString?.() ?? null, user.nationality);
+    const screening = await this.sanctionsScreening.screenAndRecord(
+      userId,
+      user.name,
+      user.dateOfBirth?.toISOString?.() ?? null,
+      user.nationality,
+    );
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data:
         decision === 'approve'
-          ? { kycStatus: 'approved', kycTier: 2, kycRejectionReason: null, rewardPoints: { increment: 100 } }
+          ? {
+              kycStatus: 'approved',
+              kycTier: 2,
+              kycRejectionReason: null,
+              rewardPoints: { increment: 100 },
+            }
           : { kycStatus: 'rejected', kycRejectionReason: reason },
     });
 
@@ -198,7 +304,9 @@ export class AdminService {
     await this.notifications.create(
       userId,
       decision === 'approve' ? 'kyc_approved' : 'kyc_rejected',
-      decision === 'approve' ? 'Your ID verification was approved' : 'Your ID verification needs attention',
+      decision === 'approve'
+        ? 'Your ID verification was approved'
+        : 'Your ID verification needs attention',
       decision === 'approve'
         ? "You're now verified at Tier 2 — higher limits and more features are unlocked."
         : `Your submission couldn't be approved. Reason: ${reason}. You can review and resubmit from the KYC screen.`,
@@ -206,17 +314,34 @@ export class AdminService {
     );
 
     await this.analyticsService.track(
-      decision === 'approve' ? ANALYTICS_EVENTS.KYC_APPROVED : ANALYTICS_EVENTS.KYC_REJECTED,
+      decision === 'approve'
+        ? ANALYTICS_EVENTS.KYC_APPROVED
+        : ANALYTICS_EVENTS.KYC_REJECTED,
       { userId, properties: { sanctionsScreeningMatch: screening.isMatch } },
     );
 
-    return { success: true, user: { id: updated.id, kycStatus: updated.kycStatus, kycTier: updated.kycTier }, sanctionsScreening: screening };
+    return {
+      success: true,
+      user: {
+        id: updated.id,
+        kycStatus: updated.kycStatus,
+        kycTier: updated.kycTier,
+      },
+      sanctionsScreening: screening,
+    };
   }
 
   // ==========================================
   // Transactions
   // ==========================================
-  async searchTransactions(filters: { userId?: string; status?: string; flagged?: boolean; type?: string; page?: number; pageSize?: number }) {
+  async searchTransactions(filters: {
+    userId?: string;
+    status?: string;
+    flagged?: boolean;
+    type?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
     const page = filters.page || 1;
     const pageSize = filters.pageSize || 50;
     const where = {
@@ -229,7 +354,9 @@ export class AdminService {
     const [transactions, total] = await Promise.all([
       this.prisma.transaction.findMany({
         where,
-        include: { user: { select: { name: true, accountNumber: true, phone: true } } },
+        include: {
+          user: { select: { name: true, accountNumber: true, phone: true } },
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -250,42 +377,84 @@ export class AdminService {
   async getTransactionDetail(transactionId: string) {
     const transaction = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
-      include: { user: { select: { id: true, name: true, accountNumber: true, phone: true, email: true } } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            accountNumber: true,
+            phone: true,
+            email: true,
+          },
+        },
+      },
     });
     if (!transaction) throw new NotFoundException('Transaction not found.');
 
     const [reversalOf, reversedBy] = await Promise.all([
       transaction.reversedTransactionId
-        ? this.prisma.transaction.findUnique({ where: { id: transaction.reversedTransactionId } })
+        ? this.prisma.transaction.findUnique({
+            where: { id: transaction.reversedTransactionId },
+          })
         : Promise.resolve(null),
-      this.prisma.transaction.findFirst({ where: { reversedTransactionId: transactionId } }),
+      this.prisma.transaction.findFirst({
+        where: { reversedTransactionId: transactionId },
+      }),
     ]);
 
     return { transaction, reversalOf, reversedBy };
   }
 
-  async flagTransaction(actingAdminId: string, transactionId: string, flagged: boolean, ip?: string) {
-    const txn = await this.prisma.transaction.update({ where: { id: transactionId }, data: { flagged } });
+  async flagTransaction(
+    actingAdminId: string,
+    transactionId: string,
+    flagged: boolean,
+    ip?: string,
+  ) {
+    const txn = await this.prisma.transaction.update({
+      where: { id: transactionId },
+      data: { flagged },
+    });
     await this.auditLog.record({
-      adminId: actingAdminId, action: flagged ? 'FLAG_TRANSACTION' : 'UNFLAG_TRANSACTION',
-      targetType: 'Transaction', targetId: transactionId, ipAddress: ip,
+      adminId: actingAdminId,
+      action: flagged ? 'FLAG_TRANSACTION' : 'UNFLAG_TRANSACTION',
+      targetType: 'Transaction',
+      targetId: transactionId,
+      ipAddress: ip,
     });
     return { success: true, transaction: { id: txn.id, flagged: txn.flagged } };
   }
 
-  async reverseTransaction(actingAdminId: string, transactionId: string, reason: string, ip?: string) {
+  async reverseTransaction(
+    actingAdminId: string,
+    transactionId: string,
+    reason: string,
+    ip?: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
-      const original = await tx.transaction.findUnique({ where: { id: transactionId } });
+      const original = await tx.transaction.findUnique({
+        where: { id: transactionId },
+      });
       if (!original) throw new NotFoundException('Transaction not found.');
-      if (original.status === 'reversed') throw new BadRequestException('This transaction has already been reversed.');
+      if (original.status === 'reversed')
+        throw new BadRequestException(
+          'This transaction has already been reversed.',
+        );
 
-      const wallet = await tx.wallet.findUnique({ where: { userId: original.userId } });
-      if (!wallet) throw new NotFoundException("The user's wallet could not be found.");
+      const wallet = await tx.wallet.findUnique({
+        where: { userId: original.userId },
+      });
+      if (!wallet)
+        throw new NotFoundException("The user's wallet could not be found.");
 
       const isReversingADebit = original.type === 'debit';
       await tx.wallet.update({
         where: { userId: original.userId },
-        data: { balance: isReversingADebit ? { increment: original.amount } : { decrement: original.amount } },
+        data: {
+          balance: isReversingADebit
+            ? { increment: original.amount }
+            : { decrement: original.amount },
+        },
       });
 
       // Deliberately a one-sided adjustment against SYSTEM_ADMIN_ADJUSTMENT
@@ -299,10 +468,22 @@ export class AdminService {
       // immediately disagree and ReconciliationService would flag it. This
       // posts exactly the one movement this method actually makes, no more.
       const adjustmentAmount = Number(original.amount);
-      const originalUserWalletAccount = await this.ledgerService.getOrCreateCustomerAccount(LedgerAccountType.CUSTOMER_WALLET, original.userId, tx);
-      const adminAdjustmentAccount = await this.ledgerService.getOrCreateSystemAccount(LedgerAccountType.SYSTEM_ADMIN_ADJUSTMENT, tx);
+      const originalUserWalletAccount =
+        await this.ledgerService.getOrCreateCustomerAccount(
+          LedgerAccountType.CUSTOMER_WALLET,
+          original.userId,
+          tx,
+        );
+      const adminAdjustmentAccount =
+        await this.ledgerService.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_ADMIN_ADJUSTMENT,
+          tx,
+        );
 
-      await tx.transaction.update({ where: { id: transactionId }, data: { status: 'reversed', reversalReason: reason } });
+      await tx.transaction.update({
+        where: { id: transactionId },
+        data: { status: 'reversed', reversalReason: reason },
+      });
 
       const reversal = await tx.transaction.create({
         data: {
@@ -322,19 +503,39 @@ export class AdminService {
         tx,
         isReversingADebit
           ? [
-              { accountId: originalUserWalletAccount.id, direction: LedgerDirection.CREDIT, amount: adjustmentAmount },
-              { accountId: adminAdjustmentAccount.id, direction: LedgerDirection.DEBIT, amount: adjustmentAmount },
+              {
+                accountId: originalUserWalletAccount.id,
+                direction: LedgerDirection.CREDIT,
+                amount: adjustmentAmount,
+              },
+              {
+                accountId: adminAdjustmentAccount.id,
+                direction: LedgerDirection.DEBIT,
+                amount: adjustmentAmount,
+              },
             ]
           : [
-              { accountId: originalUserWalletAccount.id, direction: LedgerDirection.DEBIT, amount: adjustmentAmount },
-              { accountId: adminAdjustmentAccount.id, direction: LedgerDirection.CREDIT, amount: adjustmentAmount },
+              {
+                accountId: originalUserWalletAccount.id,
+                direction: LedgerDirection.DEBIT,
+                amount: adjustmentAmount,
+              },
+              {
+                accountId: adminAdjustmentAccount.id,
+                direction: LedgerDirection.CREDIT,
+                amount: adjustmentAmount,
+              },
             ],
         { transactionId: reversal.id, memo: `Admin reversal: ${reason}` },
       );
 
       await this.auditLog.record({
-        adminId: actingAdminId, action: 'REVERSE_TRANSACTION', targetType: 'Transaction', targetId: transactionId,
-        metadata: { reason, reversalTransactionId: reversal.id }, ipAddress: ip,
+        adminId: actingAdminId,
+        action: 'REVERSE_TRANSACTION',
+        targetType: 'Transaction',
+        targetId: transactionId,
+        metadata: { reason, reversalTransactionId: reversal.id },
+        ipAddress: ip,
       });
 
       // Previously the only customer-facing trace of a reversal was the
@@ -360,20 +561,32 @@ export class AdminService {
   async listDisputes(status?: string) {
     return this.prisma.dispute.findMany({
       where: status ? { status } : {},
-      include: { user: { select: { name: true, accountNumber: true, phone: true } } },
+      include: {
+        user: { select: { name: true, accountNumber: true, phone: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async updateDispute(actingAdminId: string, disputeId: string, status: string, resolutionNote?: string, ip?: string) {
+  async updateDispute(
+    actingAdminId: string,
+    disputeId: string,
+    status: string,
+    resolutionNote?: string,
+    ip?: string,
+  ) {
     const dispute = await this.prisma.dispute.update({
       where: { id: disputeId },
       data: { status, resolutionNote, resolvedByAdminId: actingAdminId },
     });
 
     await this.auditLog.record({
-      adminId: actingAdminId, action: 'UPDATE_DISPUTE', targetType: 'Dispute', targetId: disputeId,
-      metadata: { status, resolutionNote }, ipAddress: ip,
+      adminId: actingAdminId,
+      action: 'UPDATE_DISPUTE',
+      targetType: 'Dispute',
+      targetId: disputeId,
+      metadata: { status, resolutionNote },
+      ipAddress: ip,
     });
 
     // Only notify once there's an actual outcome — not on interim status
@@ -383,8 +596,13 @@ export class AdminService {
       await this.notifications.create(
         dispute.userId,
         'dispute_resolved',
-        status === 'resolved' ? 'Your dispute has been resolved' : 'Update on your dispute',
-        resolutionNote || (status === 'resolved' ? 'Your dispute has been resolved.' : 'Your dispute was reviewed and closed.'),
+        status === 'resolved'
+          ? 'Your dispute has been resolved'
+          : 'Update on your dispute',
+        resolutionNote ||
+          (status === 'resolved'
+            ? 'Your dispute has been resolved.'
+            : 'Your dispute was reviewed and closed.'),
         { disputeId, status },
       );
     }
@@ -398,7 +616,9 @@ export class AdminService {
   async listLoans(status?: 'active' | 'repaid') {
     return this.prisma.loan.findMany({
       where: status ? { repaid: status === 'repaid' } : {},
-      include: { user: { select: { name: true, accountNumber: true, phone: true } } },
+      include: {
+        user: { select: { name: true, accountNumber: true, phone: true } },
+      },
       orderBy: { issuedAt: 'desc' },
     });
   }
@@ -418,20 +638,22 @@ export class AdminService {
   // connection-string/infra fix, not a query-shape one.
   async getDashboardStats() {
     const [
-      totalUsers, 
-      frozenUsers, 
-      pendingKyc, 
-      totalWalletBalanceResult, 
-      activeLoans, 
-      openDisputes, 
-      flaggedTransactions
+      totalUsers,
+      frozenUsers,
+      pendingKyc,
+      totalWalletBalanceResult,
+      activeLoans,
+      openDisputes,
+      flaggedTransactions,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { isFrozen: true } }),
       this.prisma.user.count({ where: { kycStatus: 'pending' } }),
       this.prisma.wallet.aggregate({ _sum: { balance: true } }),
       this.prisma.loan.count({ where: { repaid: false } }),
-      this.prisma.dispute.count({ where: { status: { in: ['open', 'under_review'] } } }),
+      this.prisma.dispute.count({
+        where: { status: { in: ['open', 'under_review'] } },
+      }),
       this.prisma.transaction.count({ where: { flagged: true } }),
     ]);
 
@@ -464,7 +686,12 @@ export class AdminService {
   // today, a formatted PDF/audit-log excerpt as a near-term follow-up —
   // is the kind of thing a compliance officer will ask for in week one of
   // actually using this."
-  async exportTransactionsCsv(filters: { userId?: string; status?: string; flagged?: boolean; type?: string }) {
+  async exportTransactionsCsv(filters: {
+    userId?: string;
+    status?: string;
+    flagged?: boolean;
+    type?: string;
+  }) {
     const EXPORT_ROW_CAP = 10000;
     const where = {
       ...(filters.userId && { userId: filters.userId }),
@@ -475,7 +702,9 @@ export class AdminService {
 
     const transactions = await this.prisma.transaction.findMany({
       where,
-      include: { user: { select: { name: true, accountNumber: true, phone: true } } },
+      include: {
+        user: { select: { name: true, accountNumber: true, phone: true } },
+      },
       orderBy: { createdAt: 'desc' },
       take: EXPORT_ROW_CAP,
     });
@@ -497,7 +726,11 @@ export class AdminService {
     }));
   }
 
-  async exportAuditLogsCsv(filters: { adminId?: string; targetType?: string; targetId?: string }) {
+  async exportAuditLogsCsv(filters: {
+    adminId?: string;
+    targetType?: string;
+    targetId?: string;
+  }) {
     return this.auditLog.list({ ...filters, limit: 10000 });
   }
 
@@ -518,7 +751,9 @@ export class AdminService {
   async getDashboardTrend(days = 30) {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const daily = await this.prisma.$queryRaw<{ day: Date; count: bigint; volume: string | null }[]>`
+    const daily = await this.prisma.$queryRaw<
+      { day: Date; count: bigint; volume: string | null }[]
+    >`
       SELECT date_trunc('day', "createdAt") AS day, COUNT(*)::bigint AS count, SUM("amount")::text AS volume
       FROM "Transaction"
       WHERE "createdAt" >= ${since} AND "status" = 'completed'
@@ -529,12 +764,20 @@ export class AdminService {
     // Postgres won't invent rows for days with zero transactions — filled
     // in here so the chart doesn't silently skip a quiet Sunday and
     // misrepresent the x-axis as continuous when it isn't.
-    const byDay = new Map(daily.map((row) => [row.day.toISOString().slice(0, 10), row]));
+    const byDay = new Map(
+      daily.map((row) => [row.day.toISOString().slice(0, 10), row]),
+    );
     const series: { date: string; count: number; volume: number }[] = [];
     for (let i = days - 1; i >= 0; i--) {
-      const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
       const row = byDay.get(date);
-      series.push({ date, count: row ? Number(row.count) : 0, volume: row ? Number(row.volume || 0) : 0 });
+      series.push({
+        date,
+        count: row ? Number(row.count) : 0,
+        volume: row ? Number(row.volume || 0) : 0,
+      });
     }
     return series;
   }
@@ -548,7 +791,11 @@ export class AdminService {
       _count: true,
     });
     return grouped
-      .map((g) => ({ category: g.category, count: g._count, volume: Number(g._sum.amount || 0) }))
+      .map((g) => ({
+        category: g.category,
+        count: g._count,
+        volume: Number(g._sum.amount || 0),
+      }))
       .sort((a, b) => b.volume - a.volume);
   }
 }

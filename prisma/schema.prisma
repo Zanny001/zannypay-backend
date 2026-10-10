@@ -1,8 +1,7 @@
 generator client {
   provider      = "prisma-client-js"
   engineType    = "binary"
-  binaryTargets = ["linux-arm64-openssl-3.0.x", "debian-openssl-3.0.x"]
-// "debian-openssl-1.1.x"
+  binaryTargets = ["linux-arm64-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 datasource db {
@@ -205,6 +204,30 @@ model LedgerReconciliationRun {
 // just as a placeholder. Forwarding to a real vendor later is a small,
 // additive change inside AnalyticsService.track(), not a redesign.
 // ==========================================
+
+// ==========================================
+// OTP — verifies a phone number actually belongs to whoever is signing
+// up (previously nothing did: any string typed into the phone field was
+// accepted as-is), and gates the new Forgot PIN flow so resetting a PIN
+// requires proving control of the phone number first, not just knowing
+// it. The code itself is never stored in plaintext — only a bcrypt hash,
+// same discipline as the User.pin column — so a database read alone
+// can't be used to complete a reset or a fake signup.
+// ==========================================
+model OtpCode {
+  id        String   @id @default(uuid())
+  target    String   // phone number (or email) the code was sent to
+  purpose   String   // 'SIGNUP_VERIFICATION' | 'PIN_RESET'
+  codeHash  String
+  attempts  Int      @default(0)
+  verified  Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([target, purpose])
+}
+
+// ==========================================
 model AnalyticsEvent {
   id         String   @id @default(uuid())
   name       String   // e.g. "transfer_completed" — see AnalyticsService's EVENT NAMES comment for the full curated list
@@ -263,6 +286,12 @@ model User {
   kycStatus       String   @default("unverified") // unverified | pending | approved | rejected — set to "approved" only by an admin, not automatically
   kycRejectionReason String?
   isFrozen        Boolean  @default(false) // set by an admin; a frozen account can log in and view data but cannot move money
+  // Set by self-serve account deletion (DELETE /user/me). The row is
+  // anonymized in place — never hard-deleted — because CBN record-
+  // retention rules require keeping transaction/ledger history, and the
+  // double-entry ledger must keep balancing. Login becomes impossible
+  // (phone/pin are tombstoned) and money movement is frozen.
+  deletedAt       DateTime?
   rewardPoints    Int      @default(0)
   lastCheckIn     DateTime?
   checkInStreak   Int      @default(0) // consecutive days checked in; resets to 1 if a day is missed

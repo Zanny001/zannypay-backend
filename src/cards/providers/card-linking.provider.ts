@@ -22,7 +22,10 @@ export interface ExternalCardLinkingProvider {
   // processor (e.g. Paystack Inline) — this backend never receives, sees,
   // or stores a raw PAN/CVV at any point, which is the entire point of
   // using a processor for this instead of a custom form.
-  linkCard(params: { userId: string; authorizationCode: string }): Promise<LinkedExternalCard>;
+  linkCard(params: {
+    userId: string;
+    authorizationCode: string;
+  }): Promise<LinkedExternalCard>;
 }
 
 // Deliberately fails clearly rather than fabricating a "linked" card with
@@ -52,10 +55,17 @@ export class MockExternalCardLinkingProvider implements ExternalCardLinkingProvi
 export class PaystackExternalCardLinkingProvider implements ExternalCardLinkingProvider {
   readonly name = 'paystack';
 
-  async linkCard({ authorizationCode }: { userId: string; authorizationCode: string }): Promise<LinkedExternalCard> {
+  async linkCard({
+    authorizationCode,
+  }: {
+    userId: string;
+    authorizationCode: string;
+  }): Promise<LinkedExternalCard> {
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
     if (!secretKey) {
-      throw new BadRequestException('PAYSTACK_SECRET_KEY is not configured on this deployment.');
+      throw new BadRequestException(
+        'PAYSTACK_SECRET_KEY is not configured on this deployment.',
+      );
     }
 
     // Paystack doesn't expose a standalone "look up this authorization"
@@ -66,18 +76,28 @@ export class PaystackExternalCardLinkingProvider implements ExternalCardLinkingP
     // Paystack Inline/Popup and pass this backend the resulting
     // authorization object, not just a bare code — wire that handoff here
     // once card linking moves from "designed" to "built."
-    const response = await fetch('https://api.paystack.co/transaction/verify/' + encodeURIComponent(authorizationCode), {
-      headers: { Authorization: `Bearer ${secretKey}` },
-    });
+    const response = await fetch(
+      'https://api.paystack.co/transaction/verify/' +
+        encodeURIComponent(authorizationCode),
+      {
+        headers: { Authorization: `Bearer ${secretKey}` },
+      },
+    );
     const data = await response.json();
     if (!response.ok || !data?.status || !data?.data?.authorization) {
-      throw new BadRequestException(data?.message || 'Could not verify this card with Paystack.');
+      throw new BadRequestException(
+        data?.message || 'Could not verify this card with Paystack.',
+      );
     }
 
     const auth = data.data.authorization;
     return {
       last4: auth.last4,
-      network: (auth.card_type || auth.brand || 'VISA').toUpperCase().includes('VERVE') ? 'VERVE' : (auth.card_type || 'VISA').toUpperCase(),
+      network: (auth.card_type || auth.brand || 'VISA')
+        .toUpperCase()
+        .includes('VERVE')
+        ? 'VERVE'
+        : (auth.card_type || 'VISA').toUpperCase(),
       expiry: `${auth.exp_month}/${String(auth.exp_year).slice(-2)}`,
       providerRef: auth.authorization_code,
     };

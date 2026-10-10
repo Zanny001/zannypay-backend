@@ -1,4 +1,11 @@
-import { IsString, IsNumber, Min, IsIn, IsOptional, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  Min,
+  IsIn,
+  IsOptional,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateRecurringTransferDto {
   @IsString()

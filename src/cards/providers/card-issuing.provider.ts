@@ -32,11 +32,19 @@ export interface CardIssuingProvider {
 export class MockCardIssuingProvider implements CardIssuingProvider {
   readonly name = 'mock';
 
-  async issueCard({ network }: { userId: string; network: string }): Promise<IssuedCard> {
+  async issueCard({
+    network,
+  }: {
+    userId: string;
+    network: string;
+  }): Promise<IssuedCard> {
     // Preserves the exact prior generation logic — same visual/behavioral
     // result as before this refactor, just now behind the interface.
-    const randomDigits = Math.floor(10000000 + Math.random() * 90000000).toString();
-    const prefix = network === 'VISA' ? '4532' : network === 'VERVE' ? '5061' : '54127589'; // rough network-realistic BIN prefixes for display purposes only — never real issuer BINs
+    const randomDigits = Math.floor(
+      10000000 + Math.random() * 90000000,
+    ).toString();
+    const prefix =
+      network === 'VISA' ? '4532' : network === 'VERVE' ? '5061' : '54127589'; // rough network-realistic BIN prefixes for display purposes only — never real issuer BINs
     const cardNumber = `${prefix}${randomDigits}`.slice(0, 16).padEnd(16, '0');
 
     const now = new Date();

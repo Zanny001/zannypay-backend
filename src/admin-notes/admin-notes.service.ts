@@ -17,15 +17,24 @@ export class AdminNotesService {
   async listForTarget(targetType: string, targetId: string) {
     return this.prisma.internalNote.findMany({
       where: { targetType, targetId },
-      include: { admin: { select: { id: true, name: true, photoUrl: true, role: true } } },
+      include: {
+        admin: { select: { id: true, name: true, photoUrl: true, role: true } },
+      },
       orderBy: { createdAt: 'asc' },
     });
   }
 
   async create(adminId: string, dto: CreateInternalNoteDto) {
     return this.prisma.internalNote.create({
-      data: { targetType: dto.targetType, targetId: dto.targetId, adminId, body: dto.body },
-      include: { admin: { select: { id: true, name: true, photoUrl: true, role: true } } },
+      data: {
+        targetType: dto.targetType,
+        targetId: dto.targetId,
+        adminId,
+        body: dto.body,
+      },
+      include: {
+        admin: { select: { id: true, name: true, photoUrl: true, role: true } },
+      },
     });
   }
 }

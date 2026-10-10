@@ -11,7 +11,10 @@ import { AdminSecurityModule } from '../admin-security/admin-security.module';
   providers: [
     KycDocumentsService,
     MockKycVerificationProvider,
-    { provide: KYC_VERIFICATION_PROVIDER, useExisting: MockKycVerificationProvider },
+    {
+      provide: KYC_VERIFICATION_PROVIDER,
+      useExisting: MockKycVerificationProvider,
+    },
   ],
 })
 export class KycModule {}

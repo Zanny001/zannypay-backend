@@ -14,14 +14,20 @@ export class BusinessService {
       select: { businessName: true, businessAccountNumber: true },
     });
     if (existing?.businessAccountNumber) {
-      return { success: true, businessName: existing.businessName, businessAccountNumber: existing.businessAccountNumber, alreadyActive: true };
+      return {
+        success: true,
+        businessName: existing.businessName,
+        businessAccountNumber: existing.businessAccountNumber,
+        alreadyActive: true,
+      };
     }
 
     // Same generate-and-retry-on-conflict pattern used for personal account
     // numbers at signup — '91' prefix keeps business numbers visually
     // distinct from the '90'-prefixed personal ones.
     for (let attempt = 0; attempt < 3; attempt++) {
-      const businessAccountNumber = '91' + Math.floor(10000000 + Math.random() * 89999999).toString();
+      const businessAccountNumber =
+        '91' + Math.floor(10000000 + Math.random() * 89999999).toString();
       try {
         const updated = await this.prisma.user.update({
           where: { id: userId },
@@ -34,7 +40,9 @@ export class BusinessService {
         throw error;
       }
     }
-    throw new Error('Could not generate a unique business account number — please try again.');
+    throw new Error(
+      'Could not generate a unique business account number — please try again.',
+    );
   }
 
   async getMyBusiness(userId: string) {
@@ -43,7 +51,9 @@ export class BusinessService {
       select: { businessName: true, businessAccountNumber: true },
     });
     if (!user?.businessAccountNumber) {
-      throw new NotFoundException('ZannyPay Business has not been activated for this account yet.');
+      throw new NotFoundException(
+        'ZannyPay Business has not been activated for this account yet.',
+      );
     }
 
     const startOfToday = new Date();
@@ -55,7 +65,12 @@ export class BusinessService {
     // of an internal transfer that specifically targeted this number.
     const [todayAgg, totalAgg, todayCount] = await Promise.all([
       this.prisma.transaction.aggregate({
-        where: { userId, type: 'credit', receivedVia: 'business', createdAt: { gte: startOfToday } },
+        where: {
+          userId,
+          type: 'credit',
+          receivedVia: 'business',
+          createdAt: { gte: startOfToday },
+        },
         _sum: { amount: true },
       }),
       this.prisma.transaction.aggregate({
@@ -63,7 +78,12 @@ export class BusinessService {
         _sum: { amount: true },
       }),
       this.prisma.transaction.count({
-        where: { userId, type: 'credit', receivedVia: 'business', createdAt: { gte: startOfToday } },
+        where: {
+          userId,
+          type: 'credit',
+          receivedVia: 'business',
+          createdAt: { gte: startOfToday },
+        },
       }),
     ]);
 

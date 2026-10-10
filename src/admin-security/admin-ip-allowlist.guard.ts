@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ipMatchesAnyCidr } from '../common/ip-match.util';
 
@@ -30,7 +35,9 @@ export class AdminIpAllowlistGuard implements CanActivate {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
-    const dbEntries = await this.prisma.adminIpAllowlistEntry.findMany({ select: { cidr: true } });
+    const dbEntries = await this.prisma.adminIpAllowlistEntry.findMany({
+      select: { cidr: true },
+    });
     const allCidrs = [...envList, ...dbEntries.map((e) => e.cidr)];
 
     if (allCidrs.length === 0) {
@@ -40,7 +47,9 @@ export class AdminIpAllowlistGuard implements CanActivate {
     }
 
     if (!ip || !ipMatchesAnyCidr(ip, allCidrs)) {
-      throw new ForbiddenException('Access to the admin API is not permitted from this network.');
+      throw new ForbiddenException(
+        'Access to the admin API is not permitted from this network.',
+      );
     }
 
     return true;

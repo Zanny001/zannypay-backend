@@ -1,7 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException, UnauthorizedException, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  UnauthorizedException,
+  Inject,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CARD_ISSUING_PROVIDER, CARD_LINKING_PROVIDER } from './cards.tokens';
-import * as bcrypt from 'bcryptjs';
+import * as bcrypt from 'bcrypt';
 // import type — CardIssuingProvider/ExternalCardLinkingProvider are pure
 // interfaces (erased at compile time). The actual runtime binding comes
 // from the @Inject(TOKEN) string tokens below, not from these types — but
@@ -12,7 +18,10 @@ import * as bcrypt from 'bcryptjs';
 // to an interface that doesn't exist at runtime and fails to build.
 import type { CardIssuingProvider } from './providers/card-issuing.provider';
 import type { ExternalCardLinkingProvider } from './providers/card-linking.provider';
-import { AnalyticsService, ANALYTICS_EVENTS } from '../analytics/analytics.service';
+import {
+  AnalyticsService,
+  ANALYTICS_EVENTS,
+} from '../analytics/analytics.service';
 
 const VALID_NETWORKS = ['VISA', 'MASTERCARD', 'VERVE', 'ZANNYPAY'];
 
@@ -31,7 +40,8 @@ export class CardsService {
   constructor(
     private prisma: PrismaService,
     @Inject(CARD_ISSUING_PROVIDER) private issuingProvider: CardIssuingProvider,
-    @Inject(CARD_LINKING_PROVIDER) private linkingProvider: ExternalCardLinkingProvider,
+    @Inject(CARD_LINKING_PROVIDER)
+    private linkingProvider: ExternalCardLinkingProvider,
     private analyticsService: AnalyticsService,
   ) {}
 
@@ -54,10 +64,23 @@ export class CardsService {
       where: { userId },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
       select: {
-        id: true, userId: true, last4: true, expiry: true, type: true, network: true,
-        isFrozen: true, isDefault: true, isLinkedExternal: true, provider: true,
-        dailyLimit: true, monthlyLimit: true, dailySpent: true, monthlySpent: true,
-        spendResetAt: true, createdAt: true, updatedAt: true,
+        id: true,
+        userId: true,
+        last4: true,
+        expiry: true,
+        type: true,
+        network: true,
+        isFrozen: true,
+        isDefault: true,
+        isLinkedExternal: true,
+        provider: true,
+        dailyLimit: true,
+        monthlyLimit: true,
+        dailySpent: true,
+        monthlySpent: true,
+        spendResetAt: true,
+        createdAt: true,
+        updatedAt: true,
         // cardNumber and providerRef deliberately excluded — see the
         // method doc comment above.
       },
@@ -76,30 +99,47 @@ export class CardsService {
   async revealCardNumber(userId: string, cardId: string, pin: string) {
     const card = await this.getOwnedCardOrThrow(userId, cardId);
     if (card.isLinkedExternal || !card.cardNumber) {
-      throw new BadRequestException('This card has no number on file to reveal — linked external cards are never stored by ZannyPay.');
+      throw new BadRequestException(
+        'This card has no number on file to reveal — linked external cards are never stored by ZannyPay.',
+      );
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found.');
 
-    if (user.kycRevealLockedUntil && user.kycRevealLockedUntil.getTime() > Date.now()) {
-      const minutesLeft = Math.ceil((user.kycRevealLockedUntil.getTime() - Date.now()) / 60000);
-      throw new UnauthorizedException(`Too many attempts. Try again in ${minutesLeft} minute(s).`);
+    if (
+      user.kycRevealLockedUntil &&
+      user.kycRevealLockedUntil.getTime() > Date.now()
+    ) {
+      const minutesLeft = Math.ceil(
+        (user.kycRevealLockedUntil.getTime() - Date.now()) / 60000,
+      );
+      throw new UnauthorizedException(
+        `Too many attempts. Try again in ${minutesLeft} minute(s).`,
+      );
     }
 
     const isPinValid = await bcrypt.compare(pin, user.pin);
     if (!isPinValid) {
       const attempts = user.kycRevealFailedAttempts + 1;
-      const data: { kycRevealFailedAttempts: number; kycRevealLockedUntil?: Date } = { kycRevealFailedAttempts: attempts };
+      const data: {
+        kycRevealFailedAttempts: number;
+        kycRevealLockedUntil?: Date;
+      } = { kycRevealFailedAttempts: attempts };
       if (attempts >= REVEAL_LOCKOUT_THRESHOLD) {
-        data.kycRevealLockedUntil = new Date(Date.now() + REVEAL_LOCKOUT_MINUTES * 60 * 1000);
+        data.kycRevealLockedUntil = new Date(
+          Date.now() + REVEAL_LOCKOUT_MINUTES * 60 * 1000,
+        );
       }
       await this.prisma.user.update({ where: { id: userId }, data });
       throw new UnauthorizedException('Incorrect PIN.');
     }
 
     if (user.kycRevealFailedAttempts > 0 || user.kycRevealLockedUntil) {
-      await this.prisma.user.update({ where: { id: userId }, data: { kycRevealFailedAttempts: 0, kycRevealLockedUntil: null } });
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { kycRevealFailedAttempts: 0, kycRevealLockedUntil: null },
+      });
     }
 
     // getOwnedCardOrThrow (unlike getCards above) runs a plain
@@ -117,10 +157,15 @@ export class CardsService {
   // subscriptions, one for everyday spend) plus linked external cards,
   // same as the reference apps this redesign is benchmarked against.
   async createCard(userId: string, network?: string) {
-    const resolvedNetwork = network && VALID_NETWORKS.includes(network) ? network : 'ZANNYPAY';
-    const issued = await this.issuingProvider.issueCard({ userId, network: resolvedNetwork });
+    const resolvedNetwork =
+      network && VALID_NETWORKS.includes(network) ? network : 'ZANNYPAY';
+    const issued = await this.issuingProvider.issueCard({
+      userId,
+      network: resolvedNetwork,
+    });
 
-    const isFirstCard = (await this.prisma.card.count({ where: { userId } })) === 0;
+    const isFirstCard =
+      (await this.prisma.card.count({ where: { userId } })) === 0;
 
     const card = await this.prisma.card.create({
       data: {
@@ -137,7 +182,10 @@ export class CardsService {
       },
     });
 
-    await this.analyticsService.track(ANALYTICS_EVENTS.CARD_CREATED, { userId, properties: { network: resolvedNetwork, isFirstCard } });
+    await this.analyticsService.track(ANALYTICS_EVENTS.CARD_CREATED, {
+      userId,
+      properties: { network: resolvedNetwork, isFirstCard },
+    });
 
     return card;
   }
@@ -147,8 +195,12 @@ export class CardsService {
   // see providers/card-linking.provider.ts for why this backend never
   // sees a raw PAN.
   async linkExternalCard(userId: string, authorizationCode: string) {
-    const linked = await this.linkingProvider.linkCard({ userId, authorizationCode });
-    const isFirstCard = (await this.prisma.card.count({ where: { userId } })) === 0;
+    const linked = await this.linkingProvider.linkCard({
+      userId,
+      authorizationCode,
+    });
+    const isFirstCard =
+      (await this.prisma.card.count({ where: { userId } })) === 0;
 
     const card = await this.prisma.card.create({
       data: {
@@ -166,13 +218,18 @@ export class CardsService {
       },
     });
 
-    await this.analyticsService.track(ANALYTICS_EVENTS.CARD_LINKED, { userId, properties: { network: linked.network } });
+    await this.analyticsService.track(ANALYTICS_EVENTS.CARD_LINKED, {
+      userId,
+      properties: { network: linked.network },
+    });
 
     return card;
   }
 
   private async getOwnedCardOrThrow(userId: string, cardId: string) {
-    const card = await this.prisma.card.findFirst({ where: { id: cardId, userId } });
+    const card = await this.prisma.card.findFirst({
+      where: { id: cardId, userId },
+    });
     if (!card) throw new NotFoundException('Card not found.');
     return card;
   }
@@ -186,7 +243,10 @@ export class CardsService {
     // cosmetic bug.
     await this.issuingProvider.setFrozen(card.providerRef, isFrozen);
 
-    return this.prisma.card.update({ where: { id: cardId }, data: { isFrozen } });
+    return this.prisma.card.update({
+      where: { id: cardId },
+      data: { isFrozen },
+    });
   }
 
   async setDefault(userId: string, cardId: string) {
@@ -196,17 +256,36 @@ export class CardsService {
     // one in the same transaction so there's never a moment (or a crash
     // between two separate writes) where a user has zero or two defaults.
     return this.prisma.$transaction(async (tx) => {
-      await tx.card.updateMany({ where: { userId, isDefault: true }, data: { isDefault: false } });
-      return tx.card.update({ where: { id: cardId }, data: { isDefault: true } });
+      await tx.card.updateMany({
+        where: { userId, isDefault: true },
+        data: { isDefault: false },
+      });
+      return tx.card.update({
+        where: { id: cardId },
+        data: { isDefault: true },
+      });
     });
   }
 
-  async updateLimits(userId: string, cardId: string, dailyLimit?: number, monthlyLimit?: number) {
+  async updateLimits(
+    userId: string,
+    cardId: string,
+    dailyLimit?: number,
+    monthlyLimit?: number,
+  ) {
     await this.getOwnedCardOrThrow(userId, cardId);
-    if (dailyLimit !== undefined && dailyLimit <= 0) throw new BadRequestException('Daily limit must be greater than zero.');
-    if (monthlyLimit !== undefined && monthlyLimit <= 0) throw new BadRequestException('Monthly limit must be greater than zero.');
-    if (dailyLimit !== undefined && monthlyLimit !== undefined && dailyLimit > monthlyLimit) {
-      throw new BadRequestException('Daily limit cannot exceed the monthly limit.');
+    if (dailyLimit !== undefined && dailyLimit <= 0)
+      throw new BadRequestException('Daily limit must be greater than zero.');
+    if (monthlyLimit !== undefined && monthlyLimit <= 0)
+      throw new BadRequestException('Monthly limit must be greater than zero.');
+    if (
+      dailyLimit !== undefined &&
+      monthlyLimit !== undefined &&
+      dailyLimit > monthlyLimit
+    ) {
+      throw new BadRequestException(
+        'Daily limit cannot exceed the monthly limit.',
+      );
     }
 
     return this.prisma.card.update({
@@ -225,8 +304,15 @@ export class CardsService {
     // If the removed card was the default and other cards remain, promote
     // the next one — a user should never end up with cards but no default.
     if (card.isDefault) {
-      const next = await this.prisma.card.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' } });
-      if (next) await this.prisma.card.update({ where: { id: next.id }, data: { isDefault: true } });
+      const next = await this.prisma.card.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (next)
+        await this.prisma.card.update({
+          where: { id: next.id },
+          data: { isDefault: true },
+        });
     }
 
     return { success: true };
@@ -244,7 +330,12 @@ export class CardsService {
   async getCardActivity(userId: string, cardId: string) {
     await this.getOwnedCardOrThrow(userId, cardId);
     return this.prisma.transaction.findMany({
-      where: { userId, category: { in: ['subscription', 'shopping', 'bills', 'data', 'airtime'] } },
+      where: {
+        userId,
+        category: {
+          in: ['subscription', 'shopping', 'bills', 'data', 'airtime'],
+        },
+      },
       orderBy: { createdAt: 'desc' },
       take: 25,
     });

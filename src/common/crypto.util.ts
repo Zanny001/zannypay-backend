@@ -37,35 +37,55 @@ function getKey(domain: EncryptionDomain): Buffer {
   }
   const key = Buffer.from(keyHex, 'hex');
   if (key.length !== 32) {
-    throw new Error(`${envVar} must decode to exactly 32 bytes (64 hex characters).`);
+    throw new Error(
+      `${envVar} must decode to exactly 32 bytes (64 hex characters).`,
+    );
   }
   return key;
 }
 
 // Output format: "<ivHex>:<authTagHex>:<ciphertextHex>" — a single string
 // that fits neatly into a TEXT column.
-export function encryptSecret(plaintext: string, domain: EncryptionDomain = 'ADMIN_2FA'): string {
+export function encryptSecret(
+  plaintext: string,
+  domain: EncryptionDomain = 'ADMIN_2FA',
+): string {
   const key = getKey(domain);
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const ciphertext = Buffer.concat([
+    cipher.update(plaintext, 'utf8'),
+    cipher.final(),
+  ]);
   const authTag = cipher.getAuthTag();
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${ciphertext.toString('hex')}`;
 }
 
-export function decryptSecret(payload: string, domain: EncryptionDomain = 'ADMIN_2FA'): string {
+export function decryptSecret(
+  payload: string,
+  domain: EncryptionDomain = 'ADMIN_2FA',
+): string {
   const key = getKey(domain);
   const [ivHex, authTagHex, ciphertextHex] = payload.split(':');
   if (!ivHex || !authTagHex || !ciphertextHex) {
     throw new Error('Malformed encrypted secret payload.');
   }
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, 'hex'));
+  const decipher = crypto.createDecipheriv(
+    ALGORITHM,
+    key,
+    Buffer.from(ivHex, 'hex'),
+  );
   decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
-  const plaintext = Buffer.concat([decipher.update(Buffer.from(ciphertextHex, 'hex')), decipher.final()]);
+  const plaintext = Buffer.concat([
+    decipher.update(Buffer.from(ciphertextHex, 'hex')),
+    decipher.final(),
+  ]);
   return plaintext.toString('utf8');
 }
 
 // Convenience wrappers so call sites read clearly at a glance which domain
 // they're touching, without repeating the domain string everywhere.
-export const encryptCustomerPII = (plaintext: string) => encryptSecret(plaintext, 'CUSTOMER_PII');
-export const decryptCustomerPII = (payload: string) => decryptSecret(payload, 'CUSTOMER_PII');
+export const encryptCustomerPII = (plaintext: string) =>
+  encryptSecret(plaintext, 'CUSTOMER_PII');
+export const decryptCustomerPII = (payload: string) =>
+  decryptSecret(payload, 'CUSTOMER_PII');

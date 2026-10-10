@@ -1,9 +1,18 @@
-import { Injectable, BadRequestException, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { LedgerAccountType, LedgerDirection } from '@prisma/client';
-import { AnalyticsService, ANALYTICS_EVENTS } from '../analytics/analytics.service';
+import {
+  AnalyticsService,
+  ANALYTICS_EVENTS,
+} from '../analytics/analytics.service';
 
 @Injectable()
 export class SavingsService {
@@ -37,21 +46,33 @@ export class SavingsService {
       },
     });
 
-    await this.analyticsService.track(ANALYTICS_EVENTS.SAVINGS_GOAL_CREATED, { userId, properties: { target } });
+    await this.analyticsService.track(ANALYTICS_EVENTS.SAVINGS_GOAL_CREATED, {
+      userId,
+      properties: { target },
+    });
 
     return { success: true, goal };
   }
 
   async deposit(userId: string, goalId: string, amount: number) {
-    if (amount <= 0) throw new BadRequestException('Amount must be greater than zero.');
+    if (amount <= 0)
+      throw new BadRequestException('Amount must be greater than zero.');
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.findUnique({ where: { id: userId }, include: { wallet: true } });
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        include: { wallet: true },
+      });
       if (!user) throw new NotFoundException('User not found.');
-      if (user.isFrozen) throw new ForbiddenException('Your account is currently restricted. Please contact support.');
+      if (user.isFrozen)
+        throw new ForbiddenException(
+          'Your account is currently restricted. Please contact support.',
+        );
 
       if (Number(user.wallet.balance) < amount) {
-        throw new BadRequestException('Insufficient wallet balance for this deposit.');
+        throw new BadRequestException(
+          'Insufficient wallet balance for this deposit.',
+        );
       }
 
       const goal = await tx.savingsGoal.findUnique({ where: { id: goalId } });
@@ -85,32 +106,59 @@ export class SavingsService {
       // Both sides of this journal belong to the same user — money moving
       // from their spendable wallet into their own savings account, not
       // to any other party or system account.
-      const walletAccount = await this.ledgerService.getOrCreateCustomerAccount(LedgerAccountType.CUSTOMER_WALLET, userId, tx);
-      const savingsAccount = await this.ledgerService.getOrCreateCustomerAccount(LedgerAccountType.CUSTOMER_SAVINGS, userId, tx);
+      const walletAccount = await this.ledgerService.getOrCreateCustomerAccount(
+        LedgerAccountType.CUSTOMER_WALLET,
+        userId,
+        tx,
+      );
+      const savingsAccount =
+        await this.ledgerService.getOrCreateCustomerAccount(
+          LedgerAccountType.CUSTOMER_SAVINGS,
+          userId,
+          tx,
+        );
       await this.ledgerService.postJournal(
         tx,
         [
-          { accountId: walletAccount.id, direction: LedgerDirection.DEBIT, amount },
-          { accountId: savingsAccount.id, direction: LedgerDirection.CREDIT, amount },
+          {
+            accountId: walletAccount.id,
+            direction: LedgerDirection.DEBIT,
+            amount,
+          },
+          {
+            accountId: savingsAccount.id,
+            direction: LedgerDirection.CREDIT,
+            amount,
+          },
         ],
-        { transactionId: depositTxn.id, memo: `Deposit to savings goal: ${goal.name}` },
+        {
+          transactionId: depositTxn.id,
+          memo: `Deposit to savings goal: ${goal.name}`,
+        },
       );
 
       return { success: true, goal: updatedGoal };
     });
 
-    await this.analyticsService.track(ANALYTICS_EVENTS.SAVINGS_DEPOSIT_COMPLETED, { userId, properties: { amount } });
+    await this.analyticsService.track(
+      ANALYTICS_EVENTS.SAVINGS_DEPOSIT_COMPLETED,
+      { userId, properties: { amount } },
+    );
 
     return result;
   }
 
   async withdraw(userId: string, goalId: string, amount: number) {
-    if (amount <= 0) throw new BadRequestException('Amount must be greater than zero.');
+    if (amount <= 0)
+      throw new BadRequestException('Amount must be greater than zero.');
 
     return await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId } });
       if (!user) throw new NotFoundException('User not found.');
-      if (user.isFrozen) throw new ForbiddenException('Your account is currently restricted. Please contact support.');
+      if (user.isFrozen)
+        throw new ForbiddenException(
+          'Your account is currently restricted. Please contact support.',
+        );
 
       const goal = await tx.savingsGoal.findUnique({ where: { id: goalId } });
       if (!goal || goal.userId !== userId) {
@@ -118,7 +166,9 @@ export class SavingsService {
       }
 
       if (Number(goal.saved) < amount) {
-        throw new BadRequestException('Insufficient funds in this savings goal.');
+        throw new BadRequestException(
+          'Insufficient funds in this savings goal.',
+        );
       }
 
       const updatedGoal = await tx.savingsGoal.update({
@@ -144,15 +194,36 @@ export class SavingsService {
         },
       });
 
-      const walletAccountWtd = await this.ledgerService.getOrCreateCustomerAccount(LedgerAccountType.CUSTOMER_WALLET, userId, tx);
-      const savingsAccountWtd = await this.ledgerService.getOrCreateCustomerAccount(LedgerAccountType.CUSTOMER_SAVINGS, userId, tx);
+      const walletAccountWtd =
+        await this.ledgerService.getOrCreateCustomerAccount(
+          LedgerAccountType.CUSTOMER_WALLET,
+          userId,
+          tx,
+        );
+      const savingsAccountWtd =
+        await this.ledgerService.getOrCreateCustomerAccount(
+          LedgerAccountType.CUSTOMER_SAVINGS,
+          userId,
+          tx,
+        );
       await this.ledgerService.postJournal(
         tx,
         [
-          { accountId: savingsAccountWtd.id, direction: LedgerDirection.DEBIT, amount },
-          { accountId: walletAccountWtd.id, direction: LedgerDirection.CREDIT, amount },
+          {
+            accountId: savingsAccountWtd.id,
+            direction: LedgerDirection.DEBIT,
+            amount,
+          },
+          {
+            accountId: walletAccountWtd.id,
+            direction: LedgerDirection.CREDIT,
+            amount,
+          },
         ],
-        { transactionId: withdrawTxn.id, memo: `Withdrawal from savings goal: ${goal.name}` },
+        {
+          transactionId: withdrawTxn.id,
+          memo: `Withdrawal from savings goal: ${goal.name}`,
+        },
       );
 
       return { success: true, goal: updatedGoal };
@@ -167,16 +238,25 @@ export class SavingsService {
   async accrueDailyInterestScheduled() {
     try {
       const result = await this.accrueDailyInterest();
-      this.logger.log(`Daily interest accrual: credited ${result.usersCredited} user(s), total ₦${result.totalAccrued.toFixed(2)}.`);
+      this.logger.log(
+        `Daily interest accrual: credited ${result.usersCredited} user(s), total ₦${result.totalAccrued.toFixed(2)}.`,
+      );
     } catch (err: any) {
       // Same transient-connectivity handling as the ledger reconciliation
       // and recurring-transfer cron jobs — a DB/pooler blip shouldn't
       // surface as a raw stack trace, and tomorrow's run will retry.
-      const isConnectivityIssue = err?.code === 'P1001' || /Can't reach database server/i.test(err?.message || '');
+      const isConnectivityIssue =
+        err?.code === 'P1001' ||
+        /Can't reach database server/i.test(err?.message || '');
       if (isConnectivityIssue) {
-        this.logger.error(`Daily interest accrual could not reach the database — skipping, will retry tomorrow. (${err.message})`);
+        this.logger.error(
+          `Daily interest accrual could not reach the database — skipping, will retry tomorrow. (${err.message})`,
+        );
       } else {
-        this.logger.error(`Daily interest accrual failed unexpectedly: ${err.message}`, err.stack);
+        this.logger.error(
+          `Daily interest accrual failed unexpectedly: ${err.message}`,
+          err.stack,
+        );
       }
     }
   }
@@ -191,9 +271,15 @@ export class SavingsService {
    * matching how OPay/PalmPay surface a single daily "interest earned"
    * line rather than one per savings goal.
    */
-  async accrueDailyInterest(): Promise<{ usersCredited: number; totalAccrued: number }> {
+  async accrueDailyInterest(): Promise<{
+    usersCredited: number;
+    totalAccrued: number;
+  }> {
     const dailyRate = SavingsService.ANNUAL_INTEREST_RATE / 365;
-    const goalTotals = await this.prisma.savingsGoal.groupBy({ by: ['userId'], _sum: { saved: true } });
+    const goalTotals = await this.prisma.savingsGoal.groupBy({
+      by: ['userId'],
+      _sum: { saved: true },
+    });
 
     let usersCredited = 0;
     let totalAccrued = 0;
@@ -211,13 +297,22 @@ export class SavingsService {
         // rounding remainder is left, a standard way to allocate a
         // rounded total across parts without the shares silently
         // summing to slightly more or less than the whole.
-        const goals = await tx.savingsGoal.findMany({ where: { userId: row.userId } });
+        const goals = await tx.savingsGoal.findMany({
+          where: { userId: row.userId },
+        });
         let remaining = interest;
         for (let i = 0; i < goals.length; i++) {
           const isLast = i === goals.length - 1;
-          const share = isLast ? remaining : Math.round((Number(goals[i].saved) / totalSaved) * interest * 100) / 100;
+          const share = isLast
+            ? remaining
+            : Math.round(
+                (Number(goals[i].saved) / totalSaved) * interest * 100,
+              ) / 100;
           if (share <= 0) continue;
-          await tx.savingsGoal.update({ where: { id: goals[i].id }, data: { saved: { increment: share } } });
+          await tx.savingsGoal.update({
+            where: { id: goals[i].id },
+            data: { saved: { increment: share } },
+          });
           remaining -= share;
         }
 
@@ -234,15 +329,35 @@ export class SavingsService {
           },
         });
 
-        const savingsAccount = await this.ledgerService.getOrCreateCustomerAccount(LedgerAccountType.CUSTOMER_SAVINGS, row.userId, tx);
-        const interestExpenseAccount = await this.ledgerService.getOrCreateSystemAccount(LedgerAccountType.SYSTEM_INTEREST_EXPENSE, tx);
+        const savingsAccount =
+          await this.ledgerService.getOrCreateCustomerAccount(
+            LedgerAccountType.CUSTOMER_SAVINGS,
+            row.userId,
+            tx,
+          );
+        const interestExpenseAccount =
+          await this.ledgerService.getOrCreateSystemAccount(
+            LedgerAccountType.SYSTEM_INTEREST_EXPENSE,
+            tx,
+          );
         await this.ledgerService.postJournal(
           tx,
           [
-            { accountId: interestExpenseAccount.id, direction: LedgerDirection.DEBIT, amount: interest },
-            { accountId: savingsAccount.id, direction: LedgerDirection.CREDIT, amount: interest },
+            {
+              accountId: interestExpenseAccount.id,
+              direction: LedgerDirection.DEBIT,
+              amount: interest,
+            },
+            {
+              accountId: savingsAccount.id,
+              direction: LedgerDirection.CREDIT,
+              amount: interest,
+            },
           ],
-          { transactionId: interestTxn.id, memo: 'Daily savings interest accrual' },
+          {
+            transactionId: interestTxn.id,
+            memo: 'Daily savings interest accrual',
+          },
         );
       });
 

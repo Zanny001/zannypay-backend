@@ -31,7 +31,8 @@ function isIpv4CidrMatch(ip: string, cidr: string): boolean {
   if (rangeInt === null || ipInt === null) return false;
 
   const prefixLen = prefixLenStr === undefined ? 32 : Number(prefixLenStr);
-  if (!Number.isInteger(prefixLen) || prefixLen < 0 || prefixLen > 32) return false;
+  if (!Number.isInteger(prefixLen) || prefixLen < 0 || prefixLen > 32)
+    return false;
   if (prefixLen === 0) return true; // 0.0.0.0/0 — matches everything, deliberately allowed since an operator may set this intentionally in a low-risk dev environment
 
   const mask = prefixLen === 32 ? 0xffffffff : (~0 << (32 - prefixLen)) >>> 0;

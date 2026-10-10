@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -13,13 +17,19 @@ export class InvoicesService {
   }
 
   async getInvoice(userId: string, invoiceId: string) {
-    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
     if (!invoice) throw new NotFoundException('Invoice not found.');
-    if (invoice.userId !== userId) throw new ForbiddenException('This invoice does not belong to you.');
+    if (invoice.userId !== userId)
+      throw new ForbiddenException('This invoice does not belong to you.');
     return invoice;
   }
 
-  async createInvoice(userId: string, body: { clientName: string; amount: number; description: string }) {
+  async createInvoice(
+    userId: string,
+    body: { clientName: string; amount: number; description: string },
+  ) {
     return this.prisma.invoice.create({
       data: {
         userId,

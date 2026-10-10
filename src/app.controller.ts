@@ -27,9 +27,16 @@ export class AppController {
       // can't reach its database isn't meaningfully healthy for anything
       // this app does.
       await this.prisma.$queryRaw`SELECT 1`;
-      return { status: 'ok', database: 'connected', timestamp: new Date().toISOString() };
-    } catch (error) {
-      throw new ServiceUnavailableException({ status: 'error', database: 'unreachable' });
+      return {
+        status: 'ok',
+        database: 'connected',
+        timestamp: new Date().toISOString(),
+      };
+    } catch {
+      throw new ServiceUnavailableException({
+        status: 'error',
+        database: 'unreachable',
+      });
     }
   }
 }

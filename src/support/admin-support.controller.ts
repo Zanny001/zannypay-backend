@@ -1,4 +1,13 @@
-import { Controller, Get, Patch, Param, Query, Body, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Param,
+  Query,
+  Body,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AdminIpAllowlistGuard } from '../admin-security/admin-ip-allowlist.guard';
 import { AdminJwtAuthGuard } from '../admin-auth/admin-jwt-auth.guard';
 import { RolesGuard } from '../admin-auth/roles.guard';
@@ -25,12 +34,27 @@ export class AdminSupportController {
   }
 
   @Patch('conversations/:id/reply')
-  async reply(@Req() req, @Param('id') id: string, @Body() dto: SendMessageDto) {
-    return this.supportService.sendAdminReply(req.user.adminId, id, dto.body, req.ip, dto.attachmentData, dto.attachmentMimeType);
+  async reply(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() dto: SendMessageDto,
+  ) {
+    return this.supportService.sendAdminReply(
+      req.user.adminId,
+      id,
+      dto.body,
+      req.ip,
+      dto.attachmentData,
+      dto.attachmentMimeType,
+    );
   }
 
   @Patch('conversations/:id/resolve')
   async resolve(@Req() req, @Param('id') id: string) {
-    return this.supportService.resolveConversation(req.user.adminId, id, req.ip);
+    return this.supportService.resolveConversation(
+      req.user.adminId,
+      id,
+      req.ip,
+    );
   }
 }

@@ -1,6 +1,6 @@
 import { authenticator } from 'otplib';
 import * as crypto from 'crypto';
-import * as bcrypt from 'bcryptjs';
+import * as bcrypt from 'bcrypt';
 
 // A 1-step window on each side tolerates ~30s of clock drift between the
 // server and the admin's phone without materially weakening the 6-digit
@@ -48,7 +48,10 @@ export async function hashRecoveryCodes(codes: string[]): Promise<string[]> {
 // Checks a supplied recovery code against the stored hashes and returns the
 // index of the match (so the caller can remove that one hash — each
 // recovery code works exactly once), or -1 if none matched.
-export async function matchRecoveryCode(supplied: string, hashedCodes: string[]): Promise<number> {
+export async function matchRecoveryCode(
+  supplied: string,
+  hashedCodes: string[],
+): Promise<number> {
   const normalized = supplied.trim().toUpperCase();
   for (let i = 0; i < hashedCodes.length; i++) {
     if (await bcrypt.compare(normalized, hashedCodes[i])) {

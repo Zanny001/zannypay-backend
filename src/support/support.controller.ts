@@ -18,6 +18,11 @@ export class SupportController {
 
   @Post('messages')
   async sendMessage(@Req() req, @Body() dto: SendMessageDto) {
-    return this.supportService.sendCustomerMessage(req.user.userId, dto.body, dto.attachmentData, dto.attachmentMimeType);
+    return this.supportService.sendCustomerMessage(
+      req.user.userId,
+      dto.body,
+      dto.attachmentData,
+      dto.attachmentMimeType,
+    );
   }
 }

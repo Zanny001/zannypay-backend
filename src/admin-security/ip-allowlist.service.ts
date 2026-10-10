@@ -11,7 +11,9 @@ export class IpAllowlistService {
 
   async list() {
     const [entries, envEntries] = [
-      await this.prisma.adminIpAllowlistEntry.findMany({ orderBy: { createdAt: 'desc' } }),
+      await this.prisma.adminIpAllowlistEntry.findMany({
+        orderBy: { createdAt: 'desc' },
+      }),
       (process.env.ADMIN_IP_ALLOWLIST || '')
         .split(',')
         .map((s) => s.trim())
@@ -26,7 +28,12 @@ export class IpAllowlistService {
     };
   }
 
-  async create(actingAdminId: string, cidr: string, label?: string, ip?: string) {
+  async create(
+    actingAdminId: string,
+    cidr: string,
+    label?: string,
+    ip?: string,
+  ) {
     const entry = await this.prisma.adminIpAllowlistEntry.create({
       data: { cidr, label, createdBy: actingAdminId },
     });
@@ -42,7 +49,9 @@ export class IpAllowlistService {
   }
 
   async remove(actingAdminId: string, id: string, ip?: string) {
-    const entry = await this.prisma.adminIpAllowlistEntry.findUnique({ where: { id } });
+    const entry = await this.prisma.adminIpAllowlistEntry.findUnique({
+      where: { id },
+    });
     if (!entry) throw new NotFoundException('Allowlist entry not found.');
 
     await this.prisma.adminIpAllowlistEntry.delete({ where: { id } });

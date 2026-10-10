@@ -21,7 +21,9 @@ describe('Require2faGuard', () => {
   });
 
   it('allows a SUPPORT_AGENT through without ever checking 2FA — money-moving/compliance roles only', async () => {
-    const context = makeContext({ user: { adminId: 'admin-1', role: 'SUPPORT_AGENT' } });
+    const context = makeContext({
+      user: { adminId: 'admin-1', role: 'SUPPORT_AGENT' },
+    });
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(prisma.adminUser.findUnique).not.toHaveBeenCalled();
   });
@@ -29,10 +31,14 @@ describe('Require2faGuard', () => {
   it.each(['SUPER_ADMIN', 'FINANCE_OFFICER', 'COMPLIANCE_OFFICER'])(
     'blocks a %s with 2FA not enabled',
     async (role) => {
-      prisma.adminUser.findUnique.mockResolvedValue({ twoFactorEnabled: false });
+      prisma.adminUser.findUnique.mockResolvedValue({
+        twoFactorEnabled: false,
+      });
       const context = makeContext({ user: { adminId: 'admin-1', role } });
 
-      await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     },
   );
 
@@ -52,15 +58,23 @@ describe('Require2faGuard', () => {
   // COMPLIANCE_OFFICER without 2FA sailed straight through undetected.
   it('specifically blocks COMPLIANCE_OFFICER — the role this guard previously missed', async () => {
     prisma.adminUser.findUnique.mockResolvedValue({ twoFactorEnabled: false });
-    const context = makeContext({ user: { adminId: 'compliance-1', role: 'COMPLIANCE_OFFICER' } });
+    const context = makeContext({
+      user: { adminId: 'compliance-1', role: 'COMPLIANCE_OFFICER' },
+    });
 
-    await expect(guard.canActivate(context)).rejects.toThrow(/Two-factor authentication is required/);
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      /Two-factor authentication is required/,
+    );
   });
 
   it('treats a missing admin record (deleted or not yet found) as 2FA not enabled, not as a pass-through', async () => {
     prisma.adminUser.findUnique.mockResolvedValue(null);
-    const context = makeContext({ user: { adminId: 'ghost-admin', role: 'SUPER_ADMIN' } });
+    const context = makeContext({
+      user: { adminId: 'ghost-admin', role: 'SUPER_ADMIN' },
+    });
 
-    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 });

@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Patch, Body, Param, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminJwtAuthGuard } from '../admin-auth/admin-jwt-auth.guard';
 import { RolesGuard } from '../admin-auth/roles.guard';
@@ -40,7 +49,15 @@ export class KycDocumentsController {
   @UseGuards(AdminIpAllowlistGuard, AdminJwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'COMPLIANCE_OFFICER')
   @Patch('admin/:documentId/status')
-  async setStatus(@Req() req, @Param('documentId') documentId: string, @Body('status') status: 'verified' | 'rejected') {
-    return this.kycDocumentsService.setStatus(documentId, status, req.user.adminId);
+  async setStatus(
+    @Req() req,
+    @Param('documentId') documentId: string,
+    @Body('status') status: 'verified' | 'rejected',
+  ) {
+    return this.kycDocumentsService.setStatus(
+      documentId,
+      status,
+      req.user.adminId,
+    );
   }
 }

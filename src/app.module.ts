@@ -11,7 +11,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { UserModule } from './user/user.module';
 import { SavingsModule } from './savings/savings.module';
 import { LoansModule } from './loans/loans.module';
-import { CardsModule } from './cards/cards.module';       // <-- NEW
+import { CardsModule } from './cards/cards.module'; // <-- NEW
 import { InvoicesModule } from './invoices/invoices.module'; // <-- NEW
 import { BudgetsModule } from './budgets/budgets.module'; // <-- NEW
 import { DisputesModule } from './disputes/disputes.module'; // <-- NEW
@@ -37,8 +37,8 @@ import { AnalyticsModule } from './analytics/analytics.module'; // <-- WORLD-CLA
     AuthModule,
     PrismaModule,
     StorageModule, // @Global — provides StorageService to UserModule/SupportModule/AdminAuthModule
-    PushModule,    // @Global — provides PushService to NotificationsModule
-    LedgerModule,  // @Global — provides LedgerService/ReconciliationService to TransactionsModule, AdminModule, SavingsModule, LoansModule, RecurringTransfersModule
+    PushModule, // @Global — provides PushService to NotificationsModule
+    LedgerModule, // @Global — provides LedgerService/ReconciliationService to TransactionsModule, AdminModule, SavingsModule, LoansModule, RecurringTransfersModule
     AnalyticsModule, // @Global — provides AnalyticsService to AuthModule, AdminModule, TransactionsModule, SavingsModule, CardsModule, LoansModule, SupportModule
     AuditLogModule, // @Global — registers AuditLogService once for admin-auth, admin, fraud, admin-security
     NotificationsModule, // @Global — registers NotificationsService once for admin, fraud, support, transactions
@@ -81,19 +81,19 @@ import { AnalyticsModule } from './analytics/analytics.module'; // <-- WORLD-CLA
     }),
     SavingsModule,
     LoansModule,
-    CardsModule,     // <-- NEW
-    InvoicesModule,  // <-- NEW
-    BudgetsModule,   // <-- NEW
-    DisputesModule,  // <-- NEW
+    CardsModule, // <-- NEW
+    InvoicesModule, // <-- NEW
+    BudgetsModule, // <-- NEW
+    DisputesModule, // <-- NEW
     ReferralsModule, // <-- NEW
     AdminAuthModule, // <-- ADMIN BACKEND
-    AdminModule,     // <-- ADMIN BACKEND
-    SupportModule,   // <-- NEW: customer support chat
-    BusinessModule,  // <-- ZannyPay Business, Phase 1
+    AdminModule, // <-- ADMIN BACKEND
+    SupportModule, // <-- NEW: customer support chat
+    BusinessModule, // <-- ZannyPay Business, Phase 1
     RecurringTransfersModule, // <-- ZannyPay Business, Phase 3
     BeneficiariesModule, // <-- WORLD-CLASS UPGRADE
-    AdminNotesModule,    // <-- WORLD-CLASS UPGRADE
-    KycModule,           // <-- WORLD-CLASS UPGRADE
+    AdminNotesModule, // <-- WORLD-CLASS UPGRADE
+    KycModule, // <-- WORLD-CLASS UPGRADE
     ComplianceExportModule, // <-- WORLD-CLASS UPGRADE
   ],
   controllers: [AppController],

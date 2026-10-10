@@ -22,7 +22,11 @@ export interface ScreeningVerdict {
 
 export interface SanctionsScreeningProvider {
   readonly name: string;
-  screen(params: { fullName: string; dateOfBirth?: string | null; nationality?: string | null }): Promise<ScreeningVerdict>;
+  screen(params: {
+    fullName: string;
+    dateOfBirth?: string | null;
+    nationality?: string | null;
+  }): Promise<ScreeningVerdict>;
 }
 
 // Deliberately conservative: returns no-match for everything except a
@@ -35,11 +39,23 @@ export interface SanctionsScreeningProvider {
 @Injectable()
 export class MockSanctionsScreeningProvider implements SanctionsScreeningProvider {
   readonly name = 'mock';
-  private static readonly TEST_DENYLIST = ['sanctioned test person', 'pep test person'];
+  private static readonly TEST_DENYLIST = [
+    'sanctioned test person',
+    'pep test person',
+  ];
 
   async screen({ fullName }: { fullName: string }): Promise<ScreeningVerdict> {
-    const isMatch = MockSanctionsScreeningProvider.TEST_DENYLIST.includes(fullName.trim().toLowerCase());
-    return { isMatch, matchData: isMatch ? { note: 'Matched mock provider test denylist — not a real screening result.' } : undefined };
+    const isMatch = MockSanctionsScreeningProvider.TEST_DENYLIST.includes(
+      fullName.trim().toLowerCase(),
+    );
+    return {
+      isMatch,
+      matchData: isMatch
+        ? {
+            note: 'Matched mock provider test denylist — not a real screening result.',
+          }
+        : undefined,
+    };
   }
 }
 
@@ -47,18 +63,36 @@ export class MockSanctionsScreeningProvider implements SanctionsScreeningProvide
 export class SanctionsScreeningService {
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(SANCTIONS_SCREENING_PROVIDER) private readonly provider: SanctionsScreeningProvider,
+    @Inject(SANCTIONS_SCREENING_PROVIDER)
+    private readonly provider: SanctionsScreeningProvider,
   ) {}
 
-  async screenAndRecord(userId: string, fullName: string, dateOfBirth?: string | null, nationality?: string | null) {
-    const verdict = await this.provider.screen({ fullName, dateOfBirth, nationality });
+  async screenAndRecord(
+    userId: string,
+    fullName: string,
+    dateOfBirth?: string | null,
+    nationality?: string | null,
+  ) {
+    const verdict = await this.provider.screen({
+      fullName,
+      dateOfBirth,
+      nationality,
+    });
     await this.prisma.sanctionsScreeningResult.create({
-      data: { userId, provider: this.provider.name, isMatch: verdict.isMatch, matchData: verdict.matchData || {} },
+      data: {
+        userId,
+        provider: this.provider.name,
+        isMatch: verdict.isMatch,
+        matchData: verdict.matchData || {},
+      },
     });
     return verdict;
   }
 
   async latestForUser(userId: string) {
-    return this.prisma.sanctionsScreeningResult.findFirst({ where: { userId }, orderBy: { screenedAt: 'desc' } });
+    return this.prisma.sanctionsScreeningResult.findFirst({
+      where: { userId },
+      orderBy: { screenedAt: 'desc' },
+    });
   }
 }

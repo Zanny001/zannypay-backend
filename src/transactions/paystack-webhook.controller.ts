@@ -1,4 +1,11 @@
-import { Controller, Post, Body, Req, Res, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Req,
+  Res,
+  BadRequestException,
+} from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import * as crypto from 'crypto';
 
@@ -22,10 +29,13 @@ export class PaystackWebhookController {
     const hashBuffer = Buffer.from(hash, 'utf8');
     const signatureBuffer = Buffer.from(String(signature || ''), 'utf8');
     const signatureMatches =
-      hashBuffer.length === signatureBuffer.length && crypto.timingSafeEqual(hashBuffer, signatureBuffer);
+      hashBuffer.length === signatureBuffer.length &&
+      crypto.timingSafeEqual(hashBuffer, signatureBuffer);
 
     if (!signatureMatches) {
-      throw new BadRequestException('Invalid transaction signature signature token.');
+      throw new BadRequestException(
+        'Invalid transaction signature signature token.',
+      );
     }
 
     // Process only successful events

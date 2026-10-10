@@ -15,9 +15,11 @@ import { PrismaService } from '../prisma/prisma.service';
 const SYSTEM_ACCOUNT_IDS: Partial<Record<LedgerAccountType, string>> = {
   [LedgerAccountType.SYSTEM_LOAN_POOL]: 'sysacct-loan-pool',
   [LedgerAccountType.SYSTEM_PAYSTACK_CLEARING]: 'sysacct-paystack-clearing',
-  [LedgerAccountType.SYSTEM_EXTERNAL_PAYOUT_CLEARING]: 'sysacct-external-payout-clearing',
+  [LedgerAccountType.SYSTEM_EXTERNAL_PAYOUT_CLEARING]:
+    'sysacct-external-payout-clearing',
   [LedgerAccountType.SYSTEM_BILLER_CLEARING]: 'sysacct-biller-clearing',
-  [LedgerAccountType.SYSTEM_OPENING_BALANCE_EQUITY]: 'sysacct-opening-balance-equity',
+  [LedgerAccountType.SYSTEM_OPENING_BALANCE_EQUITY]:
+    'sysacct-opening-balance-equity',
   [LedgerAccountType.SYSTEM_ADMIN_ADJUSTMENT]: 'sysacct-admin-adjustment',
   [LedgerAccountType.SYSTEM_INTEREST_EXPENSE]: 'sysacct-interest-expense',
 };
@@ -60,10 +62,15 @@ export class LedgerService {
    * callers either both no-op into the same existing row, or one creates
    * it and the other's create becomes a no-op update — never two rows.
    */
-  async getOrCreateSystemAccount(type: LedgerAccountType, client?: Prisma.TransactionClient) {
+  async getOrCreateSystemAccount(
+    type: LedgerAccountType,
+    client?: Prisma.TransactionClient,
+  ) {
     const id = SYSTEM_ACCOUNT_IDS[type];
     if (!id) {
-      throw new Error(`${type} is a customer account type — use getOrCreateCustomerAccount() with a userId instead.`);
+      throw new Error(
+        `${type} is a customer account type — use getOrCreateCustomerAccount() with a userId instead.`,
+      );
     }
     const db = this.tx(client);
     return db.ledgerAccount.upsert({
@@ -81,7 +88,9 @@ export class LedgerService {
    * INSERT ... ON CONFLICT, race-safe without any manual retry logic.
    */
   async getOrCreateCustomerAccount(
-    type: typeof LedgerAccountType.CUSTOMER_WALLET | typeof LedgerAccountType.CUSTOMER_SAVINGS,
+    type:
+      | typeof LedgerAccountType.CUSTOMER_WALLET
+      | typeof LedgerAccountType.CUSTOMER_SAVINGS,
     userId: string,
     client?: Prisma.TransactionClient,
   ) {
@@ -106,20 +115,30 @@ export class LedgerService {
     options?: { transactionId?: string; memo?: string },
   ): Promise<string> {
     if (lines.length < 2) {
-      throw new Error('A journal needs at least two lines — a single-sided entry is not double-entry bookkeeping.');
+      throw new Error(
+        'A journal needs at least two lines — a single-sided entry is not double-entry bookkeeping.',
+      );
     }
 
-    const debitTotal = lines.filter((l) => l.direction === LedgerDirection.DEBIT).reduce((sum, l) => sum + l.amount, 0);
-    const creditTotal = lines.filter((l) => l.direction === LedgerDirection.CREDIT).reduce((sum, l) => sum + l.amount, 0);
+    const debitTotal = lines
+      .filter((l) => l.direction === LedgerDirection.DEBIT)
+      .reduce((sum, l) => sum + l.amount, 0);
+    const creditTotal = lines
+      .filter((l) => l.direction === LedgerDirection.CREDIT)
+      .reduce((sum, l) => sum + l.amount, 0);
 
     // Cents-level tolerance for floating point — amounts are ultimately
     // stored as Decimal, but this check runs on plain JS numbers before
     // that conversion.
     if (Math.abs(debitTotal - creditTotal) > 0.005) {
-      throw new Error(`Unbalanced journal: debits ₦${debitTotal.toFixed(2)} != credits ₦${creditTotal.toFixed(2)}. Nothing was written.`);
+      throw new Error(
+        `Unbalanced journal: debits ₦${debitTotal.toFixed(2)} != credits ₦${creditTotal.toFixed(2)}. Nothing was written.`,
+      );
     }
     if (lines.some((l) => l.amount <= 0)) {
-      throw new Error('Every journal line must be a positive amount — a zero or negative line is never valid, even for a reversal (reverseJournal flips direction, not sign).');
+      throw new Error(
+        'Every journal line must be a positive amount — a zero or negative line is never valid, even for a reversal (reverseJournal flips direction, not sign).',
+      );
     }
 
     const journalId = crypto.randomUUID();
@@ -154,19 +173,29 @@ export class LedgerService {
     newTransactionId: string,
     memo?: string,
   ): Promise<string | null> {
-    const originalEntries = await client.ledgerEntry.findMany({ where: { transactionId: originalTransactionId } });
+    const originalEntries = await client.ledgerEntry.findMany({
+      where: { transactionId: originalTransactionId },
+    });
     if (originalEntries.length === 0) {
-      this.logger.warn(`reverseJournal: no ledger entries found for transaction ${originalTransactionId} — likely predates the ledger, skipping.`);
+      this.logger.warn(
+        `reverseJournal: no ledger entries found for transaction ${originalTransactionId} — likely predates the ledger, skipping.`,
+      );
       return null;
     }
 
     const inverted: JournalLine[] = originalEntries.map((entry) => ({
       accountId: entry.ledgerAccountId,
-      direction: entry.direction === LedgerDirection.DEBIT ? LedgerDirection.CREDIT : LedgerDirection.DEBIT,
+      direction:
+        entry.direction === LedgerDirection.DEBIT
+          ? LedgerDirection.CREDIT
+          : LedgerDirection.DEBIT,
       amount: Number(entry.amount),
     }));
 
-    return this.postJournal(client, inverted, { transactionId: newTransactionId, memo: memo || 'Reversal' });
+    return this.postJournal(client, inverted, {
+      transactionId: newTransactionId,
+      memo: memo || 'Reversal',
+    });
   }
 
   /**
@@ -179,8 +208,17 @@ export class LedgerService {
    */
   async getAccountBalance(accountId: string): Promise<number> {
     const [credits, debits] = await Promise.all([
-      this.prisma.ledgerEntry.aggregate({ where: { ledgerAccountId: accountId, direction: LedgerDirection.CREDIT }, _sum: { amount: true } }),
-      this.prisma.ledgerEntry.aggregate({ where: { ledgerAccountId: accountId, direction: LedgerDirection.DEBIT }, _sum: { amount: true } }),
+      this.prisma.ledgerEntry.aggregate({
+        where: {
+          ledgerAccountId: accountId,
+          direction: LedgerDirection.CREDIT,
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.ledgerEntry.aggregate({
+        where: { ledgerAccountId: accountId, direction: LedgerDirection.DEBIT },
+        _sum: { amount: true },
+      }),
     ]);
     return Number(credits._sum.amount || 0) - Number(debits._sum.amount || 0);
   }
@@ -204,8 +242,16 @@ export class LedgerService {
 
     const wallets = await this.prisma.wallet.findMany();
     for (const wallet of wallets) {
-      const didSeed = await this.seedOpeningBalanceFor(LedgerAccountType.CUSTOMER_WALLET, wallet.userId, Number(wallet.balance));
-      didSeed ? seeded++ : skipped++;
+      const didSeed = await this.seedOpeningBalanceFor(
+        LedgerAccountType.CUSTOMER_WALLET,
+        wallet.userId,
+        Number(wallet.balance),
+      );
+      if (didSeed) {
+        seeded++;
+      } else {
+        skipped++;
+      }
     }
 
     // Same gap as wallets, easy to miss the first time around: a
@@ -213,34 +259,61 @@ export class LedgerService {
     // opening-balance journal against CUSTOMER_SAVINGS, or it shows up
     // as a permanent reconciliation discrepancy for no real reason —
     // exactly what a fresh deployment will see if this half is skipped.
-    const savingsTotals = await this.prisma.savingsGoal.groupBy({ by: ['userId'], _sum: { saved: true } });
+    const savingsTotals = await this.prisma.savingsGoal.groupBy({
+      by: ['userId'],
+      _sum: { saved: true },
+    });
     for (const row of savingsTotals) {
-      const didSeed = await this.seedOpeningBalanceFor(LedgerAccountType.CUSTOMER_SAVINGS, row.userId, Number(row._sum.saved || 0));
-      didSeed ? seeded++ : skipped++;
+      const didSeed = await this.seedOpeningBalanceFor(
+        LedgerAccountType.CUSTOMER_SAVINGS,
+        row.userId,
+        Number(row._sum.saved || 0),
+      );
+      if (didSeed) {
+        seeded++;
+      } else {
+        skipped++;
+      }
     }
 
-    this.logger.log(`seedOpeningBalances: seeded ${seeded} account(s), skipped ${skipped} (already seeded or zero balance).`);
+    this.logger.log(
+      `seedOpeningBalances: seeded ${seeded} account(s), skipped ${skipped} (already seeded or zero balance).`,
+    );
     return { seeded, skipped };
   }
 
   /** Shared by both halves of seedOpeningBalances above — identical logic, different account type and source balance. */
   private async seedOpeningBalanceFor(
-    type: typeof LedgerAccountType.CUSTOMER_WALLET | typeof LedgerAccountType.CUSTOMER_SAVINGS,
+    type:
+      | typeof LedgerAccountType.CUSTOMER_WALLET
+      | typeof LedgerAccountType.CUSTOMER_SAVINGS,
     userId: string,
     balance: number,
   ): Promise<boolean> {
     const account = await this.getOrCreateCustomerAccount(type, userId);
-    const alreadyHasEntries = await this.prisma.ledgerEntry.findFirst({ where: { ledgerAccountId: account.id } });
+    const alreadyHasEntries = await this.prisma.ledgerEntry.findFirst({
+      where: { ledgerAccountId: account.id },
+    });
 
     if (alreadyHasEntries || balance <= 0) return false;
 
-    const equity = await this.getOrCreateSystemAccount(LedgerAccountType.SYSTEM_OPENING_BALANCE_EQUITY);
+    const equity = await this.getOrCreateSystemAccount(
+      LedgerAccountType.SYSTEM_OPENING_BALANCE_EQUITY,
+    );
     await this.prisma.$transaction(async (tx) => {
       await this.postJournal(
         tx,
         [
-          { accountId: equity.id, direction: LedgerDirection.DEBIT, amount: balance },
-          { accountId: account.id, direction: LedgerDirection.CREDIT, amount: balance },
+          {
+            accountId: equity.id,
+            direction: LedgerDirection.DEBIT,
+            amount: balance,
+          },
+          {
+            accountId: account.id,
+            direction: LedgerDirection.CREDIT,
+            amount: balance,
+          },
         ],
         { memo: `Opening balance — ledger go-live seed (${type})` },
       );

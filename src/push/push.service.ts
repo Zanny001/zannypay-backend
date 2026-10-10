@@ -44,21 +44,40 @@ export class PushService {
    * triggered it — a fund transfer completing must not roll back, or even
    * slow down, because a push send failed.
    */
-  async sendToUser(userId: string, title: string, body: string, data?: Record<string, unknown>) {
+  async sendToUser(
+    userId: string,
+    title: string,
+    body: string,
+    data?: Record<string, unknown>,
+  ) {
     try {
-      const tokens = await this.prisma.pushToken.findMany({ where: { userId }, select: { id: true, token: true } });
+      const tokens = await this.prisma.pushToken.findMany({
+        where: { userId },
+        select: { id: true, token: true },
+      });
       if (tokens.length === 0) return;
 
-      const messages = tokens.map((t) => ({ to: t.token, sound: 'default', title, body, data: data || {} }));
+      const messages = tokens.map((t) => ({
+        to: t.token,
+        sound: 'default',
+        title,
+        body,
+        data: data || {},
+      }));
 
       const response = await fetch(this.expoPushUrl, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
         body: JSON.stringify(messages),
       });
 
       if (!response.ok) {
-        this.logger.warn(`Expo push send failed with status ${response.status}`);
+        this.logger.warn(
+          `Expo push send failed with status ${response.status}`,
+        );
         return;
       }
 
@@ -66,21 +85,32 @@ export class PushService {
       await this.pruneDeadTokens(tokens, result);
     } catch (error) {
       // Network hiccup, Expo outage, etc. — logged, never rethrown.
-      this.logger.warn(`Push send failed, continuing: ${error?.message || error}`);
+      this.logger.warn(
+        `Push send failed, continuing: ${error?.message || error}`,
+      );
     }
   }
 
   /** Expo reports DeviceNotRegistered for uninstalled apps / stale tokens — clean those up so future sends don't keep paying for a dead token. */
-  private async pruneDeadTokens(tokens: { id: string; token: string }[], expoResult: any) {
+  private async pruneDeadTokens(
+    tokens: { id: string; token: string }[],
+    expoResult: any,
+  ) {
     const tickets: any[] = expoResult?.data;
     if (!Array.isArray(tickets)) return;
 
     const deadTokenIds = tickets
-      .map((ticket, index) => (ticket?.details?.error === 'DeviceNotRegistered' ? tokens[index]?.id : null))
+      .map((ticket, index) =>
+        ticket?.details?.error === 'DeviceNotRegistered'
+          ? tokens[index]?.id
+          : null,
+      )
       .filter((id): id is string => !!id);
 
     if (deadTokenIds.length > 0) {
-      await this.prisma.pushToken.deleteMany({ where: { id: { in: deadTokenIds } } }).catch(() => undefined);
+      await this.prisma.pushToken
+        .deleteMany({ where: { id: { in: deadTokenIds } } })
+        .catch(() => undefined);
     }
   }
 }

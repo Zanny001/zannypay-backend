@@ -10,13 +10,19 @@ import { ComplianceExportService } from './compliance-export.service';
 @UseGuards(AdminIpAllowlistGuard, AdminJwtAuthGuard, RolesGuard)
 @Roles('SUPER_ADMIN', 'COMPLIANCE_OFFICER')
 export class ComplianceExportController {
-  constructor(private readonly complianceExportService: ComplianceExportService) {}
+  constructor(
+    private readonly complianceExportService: ComplianceExportService,
+  ) {}
 
   @Get('users/:id/kyc-record.pdf')
   async kycRecord(@Param('id') id: string, @Res() res: Response) {
-    const buffer = await this.complianceExportService.generateKycDecisionPdf(id);
+    const buffer =
+      await this.complianceExportService.generateKycDecisionPdf(id);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="zannypay-kyc-record-${id}.pdf"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="zannypay-kyc-record-${id}.pdf"`,
+    );
     res.send(buffer);
   }
 }

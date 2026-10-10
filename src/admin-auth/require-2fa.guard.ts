@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Applied to AdminController, FraudController, and IpAllowlistController —
@@ -18,7 +23,11 @@ import { PrismaService } from '../prisma/prisma.service';
 // list even though this guard was already wired onto AdminController's
 // KYC-decision routes; a COMPLIANCE_OFFICER without 2FA enabled sailed
 // straight through. Fixed below.
-const ROLES_REQUIRING_2FA = ['SUPER_ADMIN', 'FINANCE_OFFICER', 'COMPLIANCE_OFFICER'];
+const ROLES_REQUIRING_2FA = [
+  'SUPER_ADMIN',
+  'FINANCE_OFFICER',
+  'COMPLIANCE_OFFICER',
+];
 
 @Injectable()
 export class Require2faGuard implements CanActivate {
@@ -30,7 +39,10 @@ export class Require2faGuard implements CanActivate {
 
     if (!user || !ROLES_REQUIRING_2FA.includes(user.role)) return true;
 
-    const admin = await this.prisma.adminUser.findUnique({ where: { id: user.adminId }, select: { twoFactorEnabled: true } });
+    const admin = await this.prisma.adminUser.findUnique({
+      where: { id: user.adminId },
+      select: { twoFactorEnabled: true },
+    });
     if (!admin?.twoFactorEnabled) {
       throw new ForbiddenException(
         'Two-factor authentication is required for your role before you can do this. Enable it under Security settings.',

@@ -1,5 +1,11 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptSecret } from '../common/crypto.util';
 import { verifyTotpToken, matchRecoveryCode } from '../common/totp.util';
@@ -34,26 +40,40 @@ export class StepUpGuard implements CanActivate {
     const adminId = request.user?.adminId;
     if (!adminId) throw new UnauthorizedException();
 
-    const admin = await this.prisma.adminUser.findUnique({ where: { id: adminId } });
+    const admin = await this.prisma.adminUser.findUnique({
+      where: { id: adminId },
+    });
     if (!admin || !admin.isActive) throw new UnauthorizedException();
 
     const { stepUpCode, stepUpPassword } = request.body || {};
 
     if (admin.twoFactorEnabled) {
       if (!stepUpCode) {
-        throw new ForbiddenException('This action requires you to re-enter your 6-digit authenticator code (stepUpCode).');
+        throw new ForbiddenException(
+          'This action requires you to re-enter your 6-digit authenticator code (stepUpCode).',
+        );
       }
-      const secret = admin.twoFactorSecret ? decryptSecret(admin.twoFactorSecret) : null;
+      const secret = admin.twoFactorSecret
+        ? decryptSecret(admin.twoFactorSecret)
+        : null;
       const validTotp = secret ? verifyTotpToken(stepUpCode, secret) : false;
-      const validRecovery = !validTotp && (await matchRecoveryCode(stepUpCode, admin.twoFactorRecoveryCodes)) >= 0;
+      const validRecovery =
+        !validTotp &&
+        (await matchRecoveryCode(stepUpCode, admin.twoFactorRecoveryCodes)) >=
+          0;
       if (!validTotp && !validRecovery) {
         throw new ForbiddenException('Invalid or expired authenticator code.');
       }
     } else {
       if (!stepUpPassword) {
-        throw new ForbiddenException('This action requires you to re-enter your password (stepUpPassword).');
+        throw new ForbiddenException(
+          'This action requires you to re-enter your password (stepUpPassword).',
+        );
       }
-      const validPassword = await bcrypt.compare(stepUpPassword, admin.password);
+      const validPassword = await bcrypt.compare(
+        stepUpPassword,
+        admin.password,
+      );
       if (!validPassword) {
         throw new ForbiddenException('Incorrect password.');
       }

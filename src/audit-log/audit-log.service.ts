@@ -35,11 +35,21 @@ export class AuditLogService {
         },
       });
     } catch (error) {
-      console.error('[AuditLog] Failed to record action:', params.action, error);
+      console.error(
+        '[AuditLog] Failed to record action:',
+        params.action,
+        error,
+      );
     }
   }
 
-  async list(filters: { adminId?: string; targetType?: string; targetId?: string; actorType?: string; limit?: number }) {
+  async list(filters: {
+    adminId?: string;
+    targetType?: string;
+    targetId?: string;
+    actorType?: string;
+    limit?: number;
+  }) {
     return this.prisma.auditLog.findMany({
       where: {
         ...(filters.adminId && { adminId: filters.adminId }),
