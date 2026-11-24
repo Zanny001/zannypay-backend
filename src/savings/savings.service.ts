@@ -16,13 +16,10 @@ import {
 
 @Injectable()
 export class SavingsService {
-  // Single source of truth for the advertised savings rate. Previously
-  // this only existed as a hardcoded, purely cosmetic constant on the
-  // mobile client (SAVINGS_APY = 0.15 in WalletContext.js) with no real
-  // accrual anywhere on the backend — the "15% p.a." shown on
-  // SavingsScreen was never actually credited to anyone. It's real now:
-  // accrueDailyInterest() below actually pays this rate out, daily.
-  static readonly ANNUAL_INTEREST_RATE = 0.15; // Development/test rate only.
+  // Development/test rate only. Production returns 0% and skips automatic
+  // accrual until a contracted, funded yield source and required approvals
+  // are in place.
+  static readonly ANNUAL_INTEREST_RATE = 0.15;
 
   // Production interest must not be credited from an unfunded internal
   // expense account. Keep savings goals available, but pause yield until a
