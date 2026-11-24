@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  UnauthorizedException,
   Controller,
   Post,
   Req,
@@ -8,7 +9,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
-import { verifyPaystackSignature } from './paystack-signature';
+import { verifyPaystackSignature, verifyPaystackSigningSecret } from './paystack-signature';
 
 @Controller('paystack')
 export class PaystackWebhookController {
@@ -16,21 +17,36 @@ export class PaystackWebhookController {
 
   @Post('webhook')
   async handleWebhook(@Req() req, @Res() res) {
-    const secret = process.env.PAYSTACK_SECRET_KEY;
-    if (!secret) {
-      throw new ServiceUnavailableException(
-        'Paystack webhook verification is not configured.',
-      );
-    }
-
     const rawBody: unknown = req.rawBody;
     if (!Buffer.isBuffer(rawBody)) {
       throw new BadRequestException('Raw webhook payload is unavailable.');
     }
 
-    const signature = req.headers['x-paystack-signature'];
-    if (!verifyPaystackSignature(rawBody, signature, secret)) {
-      throw new BadRequestException('Invalid Paystack webhook signature.');
+    const signingHeader = req.headers['paystack-signature'];
+    if (signingHeader !== undefined) {
+      const signingSecret = process.env.PAYSTACK_WEBHOOK_SECRET;
+      if (!signingSecret) {
+        throw new ServiceUnavailableException(
+          'Paystack webhook signing secret is not configured. Add PAYSTACK_WEBHOOK_SECRET from the Paystack dashboard.',
+        );
+      }
+      if (!verifyPaystackSigningSecret(rawBody, signingHeader, signingSecret)) {
+        throw new UnauthorizedException('Invalid Paystack webhook signature.');
+      }
+    } else {
+      // Backward compatibility only while Paystack still sends the legacy
+      // header. Do not remove PAYSTACK_SECRET_KEY until the new header is
+      // observed and verified in both test and live environments.
+      const secret = process.env.PAYSTACK_SECRET_KEY;
+      if (!secret) {
+        throw new ServiceUnavailableException(
+          'Paystack webhook verification is not configured.',
+        );
+      }
+      const legacySignature = req.headers['x-paystack-signature'];
+      if (!verifyPaystackSignature(rawBody, legacySignature, secret)) {
+        throw new UnauthorizedException('Invalid Paystack webhook signature.');
+      }
     }
 
     const body = req.body;
