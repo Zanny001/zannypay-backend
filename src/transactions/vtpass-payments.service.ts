@@ -56,28 +56,67 @@ export class VtpassPaymentsService {
     return Array.isArray(list) ? list : [];
   }
 
-  private async resolveFixedPrice(serviceID: string, variationCode: string, amount?: number) {
-    const response = await this.vtpass.getServiceVariations(serviceID);
-    const variation = this.variationList(response).find(
-      (item) => String(item?.variation_code) === variationCode,
+  private serviceList(payload: any): any[] {
+    return Array.isArray(payload?.content) ? payload.content : [];
+  }
+
+  private async resolveProductPrice(
+    identifier: string,
+    serviceID: string,
+    variationCode?: string,
+    requestedAmount?: number,
+  ) {
+    const catalogue = await this.vtpass.getServices(identifier);
+    const service = this.serviceList(catalogue).find(
+      (item) => String(item?.serviceID) === serviceID,
     );
-    if (!variation) {
-      throw new BadRequestException('The selected bill product is no longer available. Refresh the product list.');
+    if (!service) {
+      throw new BadRequestException('The selected bill provider is not available in the current VTpass catalogue.');
     }
 
-    const fixed = variation.fixedPrice === true || String(variation.fixedPrice).toLowerCase() === 'true';
-    const catalogueAmount = Number(variation.variation_amount);
-    if (!fixed || !Number.isFinite(catalogueAmount) || catalogueAmount <= 0) {
-      throw new BadRequestException(
-        'This product does not have a verified fixed catalogue price and is not enabled for wallet payment yet.',
+    const minimum = Number(service.minimium_amount ?? service.minimum_amount);
+    const maximum = Number(service.maximum_amount);
+    if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum <= 0 || maximum < minimum) {
+      throw new BadRequestException('VTpass has not published safe amount limits for this product.');
+    }
+
+    let variation: any = null;
+    if (variationCode) {
+      const response = await this.vtpass.getServiceVariations(serviceID);
+      variation = this.variationList(response).find(
+        (item) => String(item?.variation_code) === variationCode,
       );
+      if (!variation) {
+        throw new BadRequestException('The selected bill product is no longer available. Refresh the product list.');
+      }
     }
-    if (amount !== undefined && Math.abs(Number(amount) - catalogueAmount) > 0.001) {
-      throw new BadRequestException('The bill amount does not match the current provider price. Refresh and try again.');
+
+    const fixed = variation
+      ? variation.fixedPrice === true || ['yes', 'true'].includes(String(variation.fixedPrice).toLowerCase())
+      : false;
+    const catalogueAmount = variation ? Number(variation.variation_amount) : 0;
+    let amount: number;
+
+    if (fixed && Number.isFinite(catalogueAmount) && catalogueAmount > 0) {
+      amount = Math.round(catalogueAmount * 100) / 100;
+      if (requestedAmount !== undefined && Math.abs(Number(requestedAmount) - amount) > 0.001) {
+        throw new BadRequestException('The bill amount does not match the current provider price. Refresh and try again.');
+      }
+    } else {
+      if (requestedAmount === undefined || !Number.isFinite(Number(requestedAmount))) {
+        throw new BadRequestException('Enter an amount for this flexible-price product.');
+      }
+      amount = Math.round(Number(requestedAmount) * 100) / 100;
+      if (amount < minimum || amount > maximum) {
+        throw new BadRequestException(
+          `Enter an amount between ₦${minimum.toLocaleString('en-NG')} and ₦${maximum.toLocaleString('en-NG')}.`,
+        );
+      }
     }
+
     return {
-      amount: Math.round(catalogueAmount * 100) / 100,
-      productName: String(variation.name || variation.variation_name || variationCode),
+      amount,
+      productName: String(variation?.name || variation?.variation_name || service.name || serviceID),
     };
   }
 
@@ -114,7 +153,7 @@ export class VtpassPaymentsService {
     this.vtpass.assertPurchaseConfigured();
 
     const serviceID = dto.serviceID.trim();
-    const variationCode = dto.variation_code.trim();
+    const variationCode = dto.variation_code?.trim() || '';
     const billersCode = dto.billersCode.trim();
     const idempotencyKey = `${userId}:${dto.idempotencyKey}`;
     const hmacSecret = process.env.JWT_SECRET;
@@ -129,7 +168,7 @@ export class VtpassPaymentsService {
       const maskedIdentifier = `••••${billersCode.slice(-4)}`;
       if (
         existing.providerServiceId !== serviceID ||
-        existing.providerVariationCode !== variationCode ||
+        existing.providerVariationCode !== (variationCode || null) ||
         existing.customerIdentifier !== maskedIdentifier ||
         existing.customerIdentifierHash !== customerIdentifierHash ||
         (dto.amount !== undefined && Math.abs(Number(existing.amount) - Number(dto.amount)) > 0.001)
@@ -139,7 +178,7 @@ export class VtpassPaymentsService {
       return this.receipt(existing);
     }
 
-    const { amount, productName } = await this.resolveFixedPrice(serviceID, variationCode, dto.amount);
+    const { amount, productName } = await this.resolveProductPrice(dto.identifier, serviceID, variationCode || undefined, dto.amount);
     await this.verifyRequiredCustomer(dto);
     const requestId = this.vtpass.createRequestId();
     let reserved: any;
@@ -175,7 +214,7 @@ export class VtpassPaymentsService {
             providerRequestId: requestId,
             providerStatus: 'initiated',
             providerServiceId: serviceID,
-            providerVariationCode: variationCode,
+            providerVariationCode: variationCode || null,
             customerIdentifier: `••••${billersCode.slice(-4)}`,
             customerIdentifierHash,
           },
@@ -218,7 +257,7 @@ export class VtpassPaymentsService {
         request_id: requestId,
         serviceID,
         billersCode,
-        variation_code: variationCode,
+        ...(variationCode ? { variation_code: variationCode } : {}),
         amount,
         phone: dto.phone || reserved.user.phone,
         ...(dto.customerType ? { type: dto.customerType } : {}),
