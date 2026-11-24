@@ -16,13 +16,19 @@ import {
 
 @Injectable()
 export class SavingsService {
-  // Single source of truth for the advertised savings rate. Previously
-  // this only existed as a hardcoded, purely cosmetic constant on the
-  // mobile client (SAVINGS_APY = 0.15 in WalletContext.js) with no real
-  // accrual anywhere on the backend — the "15% p.a." shown on
-  // SavingsScreen was never actually credited to anyone. It's real now:
-  // accrueDailyInterest() below actually pays this rate out, daily.
-  static readonly ANNUAL_INTEREST_RATE = 0.15; // 15% p.a. — matches what the app has always advertised
+  // Development/test rate only. Production returns 0% and skips automatic
+  // accrual until a contracted, funded yield source and required approvals
+  // are in place.
+  static readonly ANNUAL_INTEREST_RATE = 0.15;
+
+  // Production interest must not be credited from an unfunded internal
+  // expense account. Keep savings goals available, but pause yield until a
+  // contracted, funded source and the required approvals are in place.
+  static isInterestEnabled(): boolean {
+    return (
+      process.env.NODE_ENV !== 'production' && process.env.RENDER !== 'true'
+    );
+  }
 
   private readonly logger = new Logger(SavingsService.name);
 
@@ -275,6 +281,10 @@ export class SavingsService {
     usersCredited: number;
     totalAccrued: number;
   }> {
+    if (!SavingsService.isInterestEnabled()) {
+      return { usersCredited: 0, totalAccrued: 0 };
+    }
+
     const dailyRate = SavingsService.ANNUAL_INTEREST_RATE / 365;
     const goalTotals = await this.prisma.savingsGoal.groupBy({
       by: ['userId'],

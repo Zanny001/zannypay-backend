@@ -6,9 +6,18 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { LedgerDirection } from '@prisma/client';
 
 describe('SavingsService', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalRender = process.env.RENDER;
   let service: SavingsService;
   let prisma: any;
   let ledgerService: any;
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+    if (originalRender === undefined) delete process.env.RENDER;
+    else process.env.RENDER = originalRender;
+  });
 
   beforeEach(async () => {
     prisma = {
@@ -47,6 +56,17 @@ describe('SavingsService', () => {
   });
 
   describe('accrueDailyInterest', () => {
+    it('does not credit interest in production deployments', async () => {
+      process.env.RENDER = 'true';
+
+      const result = await service.accrueDailyInterest();
+
+      expect(result).toEqual({ usersCredited: 0, totalAccrued: 0 });
+      expect(prisma.savingsGoal.groupBy).not.toHaveBeenCalled();
+      expect(prisma.transaction.create).not.toHaveBeenCalled();
+      expect(ledgerService.postJournal).not.toHaveBeenCalled();
+    });
+
     it('skips a user with zero total saved', async () => {
       prisma.savingsGoal.groupBy.mockResolvedValue([
         { userId: 'user-1', _sum: { saved: 0 } },
