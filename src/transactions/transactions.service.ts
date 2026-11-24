@@ -774,7 +774,10 @@ export class TransactionsService {
   }
   // whichever one fires first completes the transaction; the other is a
   // no-op thanks to the status check, so a payment is never credited twice.
-  private async completeFundingTransaction(reference: string) {
+  private async completeFundingTransaction(
+    reference: string,
+    providerData?: { amount: number; currency: string },
+  ) {
     const result = await this.prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({
         where: { reference },
@@ -899,8 +902,11 @@ export class TransactionsService {
     };
   }
 
-  async handlePaystackWebhook(reference: string) {
-    const result = await this.completeFundingTransaction(reference);
+  async handlePaystackWebhook(
+    reference: string,
+    providerData: { amount: number; currency: string },
+  ) {
+    const result = await this.completeFundingTransaction(reference, providerData);
     return { handled: true, ...result };
   }
 
