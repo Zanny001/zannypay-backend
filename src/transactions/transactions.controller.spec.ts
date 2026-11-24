@@ -15,6 +15,8 @@ describe('TransactionsController', () => {
           provide: TransactionsService,
           useValue: { transferFunds: jest.fn() },
         },
+        { provide: VtpassClient, useValue: { getServices: jest.fn(), getServiceVariations: jest.fn(), verifyCustomer: jest.fn() } },
+        { provide: VtpassPaymentsService, useValue: { purchase: jest.fn(), getTransaction: jest.fn() } },
       ],
     }).compile();
 
