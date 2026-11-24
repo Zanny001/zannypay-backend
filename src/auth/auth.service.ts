@@ -1,5 +1,6 @@
 import {
   Injectable,
+  BadRequestException,
   ConflictException,
   NotFoundException,
   UnauthorizedException,
@@ -196,6 +197,14 @@ export class AuthService {
   // (bcrypt-hashed codes, 10-minute TTL, 5-attempt lockout, single live
   // code per flow, purpose-scoped verification).
   async requestOtp(dto: RequestOtpDto) {
+    const isEmailPurpose = dto.purpose === OTP_PURPOSES.EMAIL_VERIFICATION;
+    if (isEmailPurpose && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(dto.target)) {
+      throw new BadRequestException('A valid email address is required.');
+    }
+    if (!isEmailPurpose && dto.target.includes('@')) {
+      throw new BadRequestException('A valid phone number is required.');
+    }
+
     // PIN_RESET codes are only sent to numbers that actually have an
     // account — otherwise the endpoint becomes an SMS-bombing tool
     // against arbitrary phone numbers. The response is deliberately
