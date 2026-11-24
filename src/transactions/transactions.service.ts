@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   ForbiddenException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '@nestjs-modules/mailer';
@@ -311,6 +312,13 @@ export class TransactionsService {
             senderName: sender.name,
           };
         } else {
+          // No licensed payout adapter is wired in this build. Reject before
+          // touching the wallet: a clearing-account journal is not proof that
+          // an external bank has received the funds.
+          throw new ServiceUnavailableException(
+            'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
+          );
+
           // --- EXTERNAL TRANSFER ---
           await tx.wallet.update({
             where: { userId: sender.id },
@@ -497,6 +505,11 @@ export class TransactionsService {
   }
 
   async payBill(userId: string, billDto: BillDto) {
+    // Fail closed until a real biller adapter can confirm fulfilment. Never
+    // debit a customer and mark a bill as paid based only on a local journal.
+    throw new ServiceUnavailableException(
+      'Bill payments are temporarily unavailable until a verified biller provider is connected.',
+    );
     const {
       billerName,
       category,
@@ -636,6 +649,10 @@ export class TransactionsService {
   }
 
   async buyAirtime(userId: string, airtimeDto: AirtimeDto) {
+    // Fail closed until a real airtime/data adapter can confirm fulfilment.
+    throw new ServiceUnavailableException(
+      'Airtime and data purchases are temporarily unavailable until a verified provider is connected.',
+    );
     const {
       phone,
       amount,
