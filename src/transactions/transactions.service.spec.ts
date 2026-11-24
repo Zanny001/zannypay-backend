@@ -80,7 +80,16 @@ describe('TransactionsService', () => {
           email: 'user@example.test',
         }),
       },
-      wallet: { update: jest.fn() },
+      user: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'user-1', isFrozen: false, pin: 'hashed-pin',
+          accountNumber: '0000000001', phone: '08000000000',
+          businessAccountNumber: null, wallet: { balance: 100000 },
+          email: 'user@example.test', name: 'Sender',
+        }),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      wallet: { update: jest.fn(), updateMany: jest.fn() },
       transaction: { create: jest.fn() },
     };
     prisma.$transaction.mockImplementation((callback) => callback(tx));
