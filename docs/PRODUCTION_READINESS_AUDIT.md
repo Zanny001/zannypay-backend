@@ -24,6 +24,10 @@ This is a source-level review of the supplied mobile v19 Ultra, admin v10 Ultra,
 - Internal wallet-to-wallet transfers now perform the sender debit with a conditional `UPDATE ... WHERE balance >= amount` and verify exactly one row changed. The earlier balance read remains only a friendly pre-check; the database predicate is the concurrency guard against simultaneous spends. PostgreSQL multi-session concurrency testing is still required. This is intended to make webhook delivery and browser-return verification safe to race; the exact database concurrency behavior still requires integration testing against the deployed PostgreSQL version.
 - Added focused tests for exact-byte HMAC verification, malformed signatures and absent secrets. The webhook controller now returns a non-2xx response when an authenticated event cannot be applied (for example, an unknown funding reference or provider amount mismatch), rather than silently acknowledging it. Controller regression tests cover missing secrets, invalid signatures, unapplied funding events and successful/replayed events. GitHub Actions is validating the complete backend suite/build/lint on this branch.
 
+
+- External transaction fulfilment: the original service had local-only completion paths for external bank transfers, bills and airtime/data without verified provider fulfilment. The engineering branch now rejects these operations before wallet mutation when no real provider adapter exists; internal wallet-to-wallet transfers remain supported. Regression tests verify no wallet debit or transaction row is created on these unavailable paths.
+- Paystack webhook handling: signatures are verified against the exact raw request bytes. The controller now returns a non-success HTTP response when a correctly signed event cannot be applied, rather than acknowledging an unknown or mismatched funding event as handled. Regression tests cover missing secrets, invalid signatures, unapplied events and already-processed successful events.
+
 ## Required production-readiness work
 ### Backend
 1. Integrate licensed payment rails for funding, transfers, bills, refunds, reversals, settlement and reconciliation.
