@@ -22,7 +22,17 @@ export class SavingsService {
   // accrual anywhere on the backend — the "15% p.a." shown on
   // SavingsScreen was never actually credited to anyone. It's real now:
   // accrueDailyInterest() below actually pays this rate out, daily.
-  static readonly ANNUAL_INTEREST_RATE = 0.15; // 15% p.a. — matches what the app has always advertised
+  static readonly ANNUAL_INTEREST_RATE = 0.15; // Development/test rate only.
+
+  // Production interest must not be credited from an unfunded internal
+  // expense account. Keep savings goals available, but pause yield until a
+  // contracted, funded source and the required approvals are in place.
+  static isInterestEnabled(): boolean {
+    return (
+      process.env.NODE_ENV !== 'production' &&
+      process.env.RENDER !== 'true'
+    );
+  }
 
   private readonly logger = new Logger(SavingsService.name);
 
@@ -275,6 +285,10 @@ export class SavingsService {
     usersCredited: number;
     totalAccrued: number;
   }> {
+    if (!SavingsService.isInterestEnabled()) {
+      return { usersCredited: 0, totalAccrued: 0 };
+    }
+
     const dailyRate = SavingsService.ANNUAL_INTEREST_RATE / 365;
     const goalTotals = await this.prisma.savingsGoal.groupBy({
       by: ['userId'],
