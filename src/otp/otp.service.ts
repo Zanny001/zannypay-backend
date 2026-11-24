@@ -39,6 +39,7 @@ import * as crypto from 'crypto';
 export const OTP_PURPOSES = {
   SIGNUP_VERIFICATION: 'SIGNUP_VERIFICATION',
   PIN_RESET: 'PIN_RESET',
+  EMAIL_VERIFICATION: 'EMAIL_VERIFICATION',
 } as const;
 export type OtpPurpose = (typeof OTP_PURPOSES)[keyof typeof OTP_PURPOSES];
 
