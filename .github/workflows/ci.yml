@@ -16,6 +16,15 @@ jobs:
           node-version: 22.11
           cache: npm
       - run: npm ci
+      - name: Capture dependency audit report
+        if: always()
+        run: npm audit --json > npm-audit.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-npm-audit
+          path: npm-audit.json
+          if-no-files-found: ignore
       - run: npm test -- --runInBand
       - run: npm run build
       - run: npx prettier --write src/main.ts src/transactions/paystack-signature.spec.ts src/transactions/paystack-signature.ts src/transactions/paystack-webhook.controller.ts src/transactions/transactions.service.spec.ts src/transactions/transactions.service.ts test/mocks/nest-schedule.ts
