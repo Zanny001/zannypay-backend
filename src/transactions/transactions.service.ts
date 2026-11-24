@@ -215,10 +215,16 @@ export class TransactionsService {
 
         if (recipient) {
           // --- INTERNAL TRANSFER ---
-          await tx.wallet.update({
-            where: { userId: sender.id },
+          // Enforce sufficient funds in the UPDATE predicate itself;
+          // the earlier balance read is only a friendly pre-check and cannot
+          // prevent two concurrent transfers from spending the same funds.
+          const debit = await tx.wallet.updateMany({
+            where: { userId: sender.id, balance: { gte: amount } },
             data: { balance: { decrement: amount } },
           });
+          if (debit.count !== 1) {
+            throw new BadRequestException('Insufficient funds.');
+          }
           await tx.wallet.update({
             where: { userId: recipient.id },
             data: { balance: { increment: amount } },
@@ -320,6 +326,10 @@ export class TransactionsService {
             recipientName: recipient.name,
             senderName: sender.name,
           };
+        } else {
+          throw new ServiceUnavailableException(
+            'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
+          );
         }
       });
     } catch (error) {
