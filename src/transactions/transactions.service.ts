@@ -945,7 +945,7 @@ export class TransactionsService {
           amount: verifyData.data.amount,
           currency: verifyData.data.currency,
         });
-        return { success: true, status: result.status };
+        return { success: result.success, status: result.status };
       }
 
       // Paystack hasn't confirmed success yet (still processing, or the
