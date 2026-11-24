@@ -51,6 +51,25 @@ describe('VtpassPaymentsService', () => {
     expect((service as any).responseState(payload)).toBe('pending');
   });
 
+  it('accepts documented VTpass biller verification success formats', async () => {
+    const dto = {
+      serviceID: 'ikeja-electric',
+      billersCode: '1111111111111',
+      customerType: 'prepaid',
+    };
+    vtpass.verifyCustomer.mockResolvedValueOnce({
+      code: '000',
+      content: { Customer_Name: 'Sandbox Customer', MeterNumber: dto.billersCode },
+    });
+    await expect((service as any).verifyRequiredCustomer(dto)).resolves.toBeUndefined();
+
+    vtpass.verifyCustomer.mockResolvedValueOnce({ code: '020' });
+    await expect((service as any).verifyRequiredCustomer(dto)).resolves.toBeUndefined();
+
+    vtpass.verifyCustomer.mockResolvedValueOnce({ code: '030' });
+    await expect((service as any).verifyRequiredCustomer(dto)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('uses provider catalogue price rather than a client-supplied price', async () => {
     vtpass.getServices.mockResolvedValue({
       content: [{
