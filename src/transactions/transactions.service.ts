@@ -26,6 +26,10 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class TransactionsService {
+  private hasExternalPayoutProvider(): boolean { return false; }
+  private hasBillerProvider(): boolean { return false; }
+  private hasAirtimeProvider(): boolean { return false; }
+
   // Reward points → naira conversion for bill/airtime purchases. Kept as a
   // single constant here rather than DB-configurable for now — it's a
   // conservative, low-stakes rate (a maximally engaged daily-check-in user
@@ -312,87 +316,15 @@ export class TransactionsService {
             senderName: sender.name,
           };
         } else {
-          // No licensed payout adapter is wired in this build. Reject before
-          // touching the wallet: a clearing-account journal is not proof that
-          // an external bank has received the funds.
-          throw new ServiceUnavailableException(
-            'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
-          );
-
-          // --- EXTERNAL TRANSFER ---
-          await tx.wallet.update({
-            where: { userId: sender.id },
-            data: { balance: { decrement: amount } },
-          });
-
-          const senderTx = await tx.transaction.create({
-            data: {
-              userId: sender.id,
-              type: 'debit',
-              category: 'transfer',
-              title: `Transfer to ${recipientName || recipientAccount}`,
-              subtitle: bank || 'External Bank',
-              amount,
-              bank,
-              status: 'completed',
-              reference: `TXN-${Date.now()}-EXT`,
-              recipientAccount,
-              idempotencyKey,
-            },
-          });
-
-          // The other side of this journal is a system clearing account,
-          // not a second customer — the actual payout to the external bank
-          // happens through a real payment rail this codebase doesn't
-          // integrate with yet (see the mock-integration notes elsewhere in
-          // this file); this clearing account is where that integration
-          // would settle against once it exists.
-          const senderWalletAccountExt =
-            await this.ledgerService.getOrCreateCustomerAccount(
-              LedgerAccountType.CUSTOMER_WALLET,
-              sender.id,
-              tx,
+          if (!this.hasExternalPayoutProvider()) {
+            // Reject before touching the wallet: a clearing-account journal
+            // is not proof that an external bank received the funds.
+            throw new ServiceUnavailableException(
+              'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
             );
-          const externalClearingAccount =
-            await this.ledgerService.getOrCreateSystemAccount(
-              LedgerAccountType.SYSTEM_EXTERNAL_PAYOUT_CLEARING,
-              tx,
-            );
-          await this.ledgerService.postJournal(
-            tx,
-            [
-              {
-                accountId: senderWalletAccountExt.id,
-                direction: LedgerDirection.DEBIT,
-                amount,
-              },
-              {
-                accountId: externalClearingAccount.id,
-                direction: LedgerDirection.CREDIT,
-                amount,
-              },
-            ],
-            {
-              transactionId: senderTx.id,
-              memo: `External transfer to ${recipientAccount}`,
-            },
-          );
+          }
 
-          this.mailerService
-            .sendMail({
-              to: sender.email,
-              subject: 'Debit Alert: External Transfer 💸',
-              html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Transfer Processing</h2><p>You sent <strong>NGN ${amount}</strong> to account ${recipientAccount} at ${bank || 'an external bank'}.</p><p>Reference: ${senderTx.reference}</p></div>`,
-            })
-            .catch(console.error);
 
-          return {
-            success: true,
-            transactionId: senderTx.id,
-            senderTx,
-            isInternal: false,
-            recipientName: recipientName || recipientAccount,
-          };
         }
       });
     } catch (error) {
@@ -505,11 +437,12 @@ export class TransactionsService {
   }
 
   async payBill(userId: string, billDto: BillDto) {
-    // Fail closed until a real biller adapter can confirm fulfilment. Never
-    // debit a customer and mark a bill as paid based only on a local journal.
-    throw new ServiceUnavailableException(
-      'Bill payments are temporarily unavailable until a verified biller provider is connected.',
-    );
+    // Fail closed until a real biller adapter can confirm fulfilment.
+    if (!this.hasBillerProvider()) {
+      throw new ServiceUnavailableException(
+        'Bill payments are temporarily unavailable until a verified biller provider is connected.',
+      );
+    }
     const {
       billerName,
       category,
@@ -650,9 +583,11 @@ export class TransactionsService {
 
   async buyAirtime(userId: string, airtimeDto: AirtimeDto) {
     // Fail closed until a real airtime/data adapter can confirm fulfilment.
-    throw new ServiceUnavailableException(
-      'Airtime and data purchases are temporarily unavailable until a verified provider is connected.',
-    );
+    if (!this.hasAirtimeProvider()) {
+      throw new ServiceUnavailableException(
+        'Airtime and data purchases are temporarily unavailable until a verified provider is connected.',
+      );
+    }
     const {
       phone,
       amount,
