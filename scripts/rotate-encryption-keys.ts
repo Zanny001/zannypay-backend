@@ -52,7 +52,6 @@ function printReport(report: TargetReport, apply: boolean) {
 
 async function main() {
   const apply = process.argv.includes('--apply');
-  const allowFailures = process.argv.includes('--allow-failures');
   const pii = keysFor('CUSTOMER_PII');
   const admin = keysFor('ADMIN_2FA');
   const plan: Array<[RotationTarget, Buffer, Buffer]> = [
@@ -74,16 +73,25 @@ async function main() {
     console.log(failures ? 'Preflight found undecryptable values; investigate before applying.' : 'Preflight clean. Re-run with --apply to write.');
     return;
   }
-  if (failures && !allowFailures) {
+  if (failures) {
     process.exitCode = 1;
-    throw new Error(`Aborting before writes: ${failures} undecryptable values. Use --allow-failures only after review.`);
+    throw new Error(`Aborting before writes: ${failures} undecryptable values. Resolve every failure before applying rotation.`);
   }
 
   console.log('Applying rotation…');
+  let applyFailures = 0;
+  let applyConflicts = 0;
   for (const [target, oldKey, newKey] of plan) {
-    printReport(await rotateTarget(target, oldKey, newKey, { apply: true }), true);
+    const report = await rotateTarget(target, oldKey, newKey, { apply: true });
+    printReport(report, true);
+    applyFailures += report.failed.length;
+    applyConflicts += report.conflicts.length;
   }
-  console.log('Rotation pass complete. Switch application secrets only after reviewing all counts and conflicts.');
+  if (applyFailures || applyConflicts) {
+    process.exitCode = 1;
+    throw new Error(`Rotation incomplete: ${applyFailures} undecryptable values and ${applyConflicts} concurrent-write conflicts. Do not switch application secrets.`);
+  }
+  console.log('Rotation pass complete. Verify counts and backups before switching application secrets.');
 }
 
 main()
