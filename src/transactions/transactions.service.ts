@@ -502,54 +502,103 @@ export class TransactionsService {
       );
     }
 
-    // Persist the pending transaction before contacting Paystack. A very
-    // fast webhook can then always find the reference it needs to credit.
+    const idempotencyKey = fundDto.idempotencyKey;
+    if (idempotencyKey) {
+      const existing = await this.prisma.transaction.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existing) {
+        if (
+          existing.userId !== userId ||
+          existing.category !== 'funding' ||
+          existing.type !== 'credit' ||
+          Number(existing.amount) !== amount
+        ) {
+          throw new BadRequestException('This payment attempt key is already associated with another request.');
+        }
+        if (existing.status === 'completed') {
+          return { success: true, status: 'completed', reference: existing.reference, replayed: true };
+        }
+        if (existing.status === 'pending') {
+          return {
+            success: false,
+            status: 'pending',
+            reference: existing.reference,
+            message: 'This payment attempt is already being processed. Check its status before starting another payment.',
+            replayed: true,
+          };
+        }
+        throw new BadRequestException('This payment attempt has already failed. Start a new funding attempt.');
+      }
+    }
+
+    // Persist the pending transaction before contacting Paystack so that a
+    // fast webhook can always find its reference.
     const reference = `FND-${randomUUID()}`;
-    const txn = await this.prisma.transaction.create({
-      data: {
-        userId,
-        type: 'credit',
-        category: 'funding',
-        title: 'Wallet Top-up',
-        subtitle: 'Paystack Checkout',
-        amount,
-        status: 'pending',
-        reference,
-      },
-    });
+    let txn;
+    try {
+      txn = await this.prisma.transaction.create({
+        data: {
+          userId,
+          type: 'credit',
+          category: 'funding',
+          title: 'Wallet Top-up',
+          subtitle: 'Paystack Checkout',
+          amount,
+          status: 'pending',
+          reference,
+          ...(idempotencyKey ? { idempotencyKey } : {}),
+        },
+      });
+    } catch (error) {
+      // Concurrent retries can race the unique idempotencyKey constraint.
+      if (error?.code === 'P2002' && idempotencyKey) {
+        const existing = await this.prisma.transaction.findUnique({ where: { idempotencyKey } });
+        if (existing && existing.userId === userId && existing.category === 'funding' && Number(existing.amount) === amount) {
+          return {
+            success: existing.status === 'completed',
+            status: existing.status,
+            reference: existing.reference,
+            replayed: true,
+          };
+        }
+      }
+      throw error;
+    }
 
     const backendUrl = (
       process.env.BACKEND_URL || 'https://zannypay-backend.onrender.com'
-    ).replace(/\/+$/, '');
+    ).replace(/\\/+$/, '');
     const callbackUrl = `${backendUrl}/api/v1/wallet/payment-success`;
 
     let paystackResponse: Response;
     let resData: any;
     try {
-      paystackResponse = await fetch(
-        'https://api.paystack.co/transaction/initialize',
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${secret}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: user.email,
-            amount: amountInKobo,
-            currency: 'NGN',
-            reference,
-            callback_url: callbackUrl,
-          }),
+      paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          'Content-Type': 'application/json',
         },
-      );
+        body: JSON.stringify({
+          email: user.email,
+          amount: amountInKobo,
+          currency: 'NGN',
+          reference,
+          callback_url: callbackUrl,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
       resData = await paystackResponse.json();
     } catch {
-      // The request may have reached Paystack even if the response was lost.
-      // Keep the record pending so webhook/verify reconciliation can settle it.
-      throw new ServiceUnavailableException(
-        `Paystack did not confirm the checkout initialization. Keep reference ${reference} and check its status before retrying.`,
-      );
+      // The provider may have accepted the request even though our response
+      // timed out. Preserve the reference and never create a second charge.
+      return {
+        success: false,
+        status: 'pending',
+        reference,
+        message: 'Payment setup is taking longer than expected. Check this reference before trying again.',
+      };
     }
 
     if (!paystackResponse.ok || !resData?.status || !resData?.data?.authorization_url) {
@@ -557,13 +606,12 @@ export class TransactionsService {
         where: { id: txn.id, status: 'pending' },
         data: { status: 'failed' },
       });
-      throw new BadRequestException(
-        resData?.message || 'Paystack could not initialize this payment.',
-      );
+      throw new BadRequestException(resData?.message || 'Paystack could not initialize this payment.');
     }
 
     return {
       success: true,
+      status: 'initialized',
       transactionId: txn.id,
       authorizationUrl: resData.data.authorization_url,
       reference,
