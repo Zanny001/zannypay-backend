@@ -12,6 +12,10 @@ export class TransferDto {
   @IsString()
   bank?: string;
 
+  @IsOptional()
+  @IsString()
+  bankCode?: string;
+
   @IsNumber()
   @Min(1)
   amount: number;
