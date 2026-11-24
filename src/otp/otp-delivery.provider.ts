@@ -87,6 +87,7 @@ export class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
     const baseUrl = (
       process.env.TERMII_BASE_URL || 'https://api.ng.termii.com'
     ).replace(/\/$/, '');
+    const messagePurpose = purpose.toLowerCase().replace(/_/g, ' ');
     const response = await fetch(`${baseUrl}/api/sms/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -94,7 +95,7 @@ export class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
         api_key: apiKey,
         to: phone,
         from: senderId,
-        sms: `Your ZannyPay verification code is ${code}. It expires in 10 minutes. If you did not request this, ignore this message.`,
+        sms: `Your ZannyPay ${messagePurpose} code is ${code}. It expires in 10 minutes. If you did not request this, ignore this message.`,
         type: 'plain',
         channel: process.env.TERMII_CHANNEL || 'dnd',
       }),
@@ -102,7 +103,9 @@ export class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
     });
 
     if (!response.ok) {
-      this.logger.error(`Termii SMS request failed with HTTP ${response.status}`);
+      this.logger.error(
+        `Termii SMS request failed with HTTP ${response.status}`,
+      );
       throw new ServiceUnavailableException(
         'SMS delivery is temporarily unavailable. Please try again later.',
       );
@@ -113,8 +116,10 @@ export class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
       message_id?: string;
       code?: string;
     };
+    // Termii's documented success payload uses code="ok" alongside a
+    // message_id. Treat other codes as failures; do not reject valid sends.
     if (
-      result.code ||
+      (result.code && result.code.toLowerCase() !== 'ok') ||
       (!result.message_id &&
         !result.message?.toLowerCase().includes('success'))
     ) {
