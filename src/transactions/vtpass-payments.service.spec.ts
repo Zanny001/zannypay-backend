@@ -36,7 +36,7 @@ describe('VtpassPaymentsService', () => {
     })).toBe('completed');
   });
 
-  it.each(['016', '091'])('classifies definitive provider failure code %s as failed', (code) => {
+  it.each(['016', '040', '091'])('classifies definitive provider failure code %s as failed', (code) => {
     expect((service as any).responseState({ code })).toBe('failed');
   });
 
