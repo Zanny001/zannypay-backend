@@ -28,10 +28,7 @@ export class SavingsService {
   // expense account. Keep savings goals available, but pause yield until a
   // contracted, funded source and the required approvals are in place.
   static isInterestEnabled(): boolean {
-    return (
-      process.env.NODE_ENV !== 'production' &&
-      process.env.RENDER !== 'true'
-    );
+    return process.env.NODE_ENV !== 'production' && process.env.RENDER !== 'true';
   }
 
   private readonly logger = new Logger(SavingsService.name);
