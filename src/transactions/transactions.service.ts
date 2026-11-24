@@ -480,7 +480,8 @@ export class TransactionsService {
     const amountInKobo = Math.round(amount * 100);
     if (
       !Number.isFinite(amount) ||
-      amount <= 0 ||
+      amount < 100 ||
+      amount > 10000000 ||
       !Number.isSafeInteger(amountInKobo) ||
       Math.abs(amountInKobo / 100 - amount) > 0.000001
     ) {
@@ -502,21 +503,71 @@ export class TransactionsService {
       );
     }
 
-    // Persist the pending transaction before contacting Paystack. A very
-    // fast webhook can then always find the reference it needs to credit.
+    const idempotencyKey = fundDto.idempotencyKey;
+    if (idempotencyKey) {
+      const existing = await this.prisma.transaction.findUnique({
+        where: { idempotencyKey },
+      });
+      if (existing) {
+        if (
+          existing.userId !== userId ||
+          existing.category !== 'funding' ||
+          existing.type !== 'credit' ||
+          Number(existing.amount) !== amount
+        ) {
+          throw new BadRequestException('This payment attempt key is already associated with another request.');
+        }
+        if (existing.status === 'completed') {
+          return { success: true, status: 'completed', reference: existing.reference, amount: Number(existing.amount), replayed: true };
+        }
+        if (existing.status === 'pending') {
+          return {
+            success: false,
+            status: 'pending',
+            reference: existing.reference,
+            amount: Number(existing.amount),
+            message: 'This payment attempt is already being processed. Check its status before starting another payment.',
+            replayed: true,
+          };
+        }
+        throw new BadRequestException('This payment attempt has already failed. Start a new funding attempt.');
+      }
+    }
+
+    // Persist the pending transaction before contacting Paystack so that a
+    // fast webhook can always find its reference.
     const reference = `FND-${randomUUID()}`;
-    const txn = await this.prisma.transaction.create({
-      data: {
-        userId,
-        type: 'credit',
-        category: 'funding',
-        title: 'Wallet Top-up',
-        subtitle: 'Paystack Checkout',
-        amount,
-        status: 'pending',
-        reference,
-      },
-    });
+    let txn;
+    try {
+      txn = await this.prisma.transaction.create({
+        data: {
+          userId,
+          type: 'credit',
+          category: 'funding',
+          title: 'Wallet Top-up',
+          subtitle: 'Paystack Checkout',
+          amount,
+          status: 'pending',
+          reference,
+          ...(idempotencyKey ? { idempotencyKey } : {}),
+        },
+      });
+    } catch (error) {
+      // Concurrent retries can race the unique idempotencyKey constraint.
+      if (error?.code === 'P2002' && idempotencyKey) {
+        const existing = await this.prisma.transaction.findUnique({ where: { idempotencyKey } });
+        if (existing && existing.userId === userId && existing.category === 'funding' && Number(existing.amount) === amount) {
+          return {
+            success: existing.status === 'completed',
+            status: existing.status,
+            reference: existing.reference,
+            amount: Number(existing.amount),
+            replayed: true,
+          };
+        }
+      }
+      throw error;
+    }
 
     const backendUrl = (
       process.env.BACKEND_URL || 'https://zannypay-backend.onrender.com'
@@ -526,30 +577,32 @@ export class TransactionsService {
     let paystackResponse: Response;
     let resData: any;
     try {
-      paystackResponse = await fetch(
-        'https://api.paystack.co/transaction/initialize',
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${secret}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: user.email,
-            amount: amountInKobo,
-            currency: 'NGN',
-            reference,
-            callback_url: callbackUrl,
-          }),
+      paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          'Content-Type': 'application/json',
         },
-      );
+        body: JSON.stringify({
+          email: user.email,
+          amount: amountInKobo,
+          currency: 'NGN',
+          reference,
+          callback_url: callbackUrl,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
       resData = await paystackResponse.json();
     } catch {
-      // The request may have reached Paystack even if the response was lost.
-      // Keep the record pending so webhook/verify reconciliation can settle it.
-      throw new ServiceUnavailableException(
-        `Paystack did not confirm the checkout initialization. Keep reference ${reference} and check its status before retrying.`,
-      );
+      // The provider may have accepted the request even though our response
+      // timed out. Preserve the reference and never create a second charge.
+      return {
+        success: false,
+        status: 'pending',
+        reference,
+        amount,
+        message: 'Payment setup is taking longer than expected. Check this reference before trying again.',
+      };
     }
 
     if (!paystackResponse.ok || !resData?.status || !resData?.data?.authorization_url) {
@@ -557,13 +610,13 @@ export class TransactionsService {
         where: { id: txn.id, status: 'pending' },
         data: { status: 'failed' },
       });
-      throw new BadRequestException(
-        resData?.message || 'Paystack could not initialize this payment.',
-      );
+      throw new BadRequestException(resData?.message || 'Paystack could not initialize this payment.');
     }
 
     return {
       success: true,
+      status: 'initialized',
+      amount,
       transactionId: txn.id,
       authorizationUrl: resData.data.authorization_url,
       reference,
@@ -969,11 +1022,16 @@ export class TransactionsService {
       'transaction' in result &&
       result.transaction
     ) {
-      await this.runFraudCheck(result.transaction);
-      await this.analyticsService.track(ANALYTICS_EVENTS.WALLET_FUNDED, {
+      // The wallet credit and journal are already committed atomically.
+      // Do not hold Paystack's webhook acknowledgement open for ancillary
+      // fraud/analytics work; failures are logged and can be reconciled.
+      void this.runFraudCheck(result.transaction).catch((error) =>
+        console.error('Post-funding fraud check failed:', error),
+      );
+      void this.analyticsService.track(ANALYTICS_EVENTS.WALLET_FUNDED, {
         userId: result.transaction.userId,
         properties: { amount: Number(result.transaction.amount) },
-      });
+      }).catch((error) => console.error('Wallet-funded analytics failed:', error));
     }
 
     return {
@@ -1031,6 +1089,11 @@ export class TransactionsService {
         verifyData.status &&
         verifyData.data?.status === 'success'
       ) {
+        // Never let a successful provider response for a different reference
+        // settle this user's pending funding instruction.
+        if (verifyData.data.reference !== reference) {
+          return { success: false, status: 'provider_reference_mismatch' };
+        }
         const result = await this.completeFundingTransaction(reference, {
           amount: verifyData.data.amount,
           currency: verifyData.data.currency,

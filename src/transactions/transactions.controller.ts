@@ -134,31 +134,37 @@ export class TransactionsController {
   // Serves the HTML success screen inside the mobile in-app browser/WebView
   // instructing the user to click the top-left "X" button to return to the app.
   @Get('payment-success')
-  showPaymentSuccess(@Res() res: Response) {
+  showPaymentSuccess(@Req() req, @Res() res: Response) {
+    // Paystack's redirect is not proof of a successful charge. The app must
+    // call the authenticated verify endpoint before displaying a success state.
+    const rawReference = req.query?.reference;
+    const reference = typeof rawReference === 'string' ? rawReference : '';
+    const appReturnUrl = reference
+      ? `zannypay://payment-complete?reference=${encodeURIComponent(reference)}`
+      : 'zannypay://payment-complete';
+    const safeReturnUrl = appReturnUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const scriptReturnUrl = JSON.stringify(appReturnUrl);
     const html = `
       <!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Payment Successful</title>
+        <meta name="robots" content="noindex,nofollow">
+        <title>Return to ZannyPay</title>
       </head>
-      <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; text-align:center; background-color:#f4f4f9; padding:20px; margin:0;">
-        <div style="background:white; padding:40px 20px; border-radius:12px; box-shadow:0 4px 15px rgba(0,0,0,0.05); max-width:400px; width:100%;">
-          <div style="font-size:50px; margin-bottom:10px;">✅</div>
-          <h1 style="color:#2e7d32; margin-bottom:10px; font-size:24px;">Payment Successful!</h1>
-          <p style="font-size:15px; color:#555; margin-bottom:30px; line-height:1.4;">Your transaction has been processed and your wallet is being credited.</p>
-          
-          <div style="padding:15px; background-color:#e8f4fd; border-left:5px solid #1976d2; border-radius:6px;">
-            <p style="font-size:15px; font-weight:bold; color:#1976d2; margin:0; line-height:1.4;">
-              Please tap the "X" button at the top left to close this page and return to your app dashboard.
-            </p>
-          </div>
-        </div>
+      <body style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:Arial,sans-serif;text-align:center;background:#f4f6fb;padding:24px;margin:0;box-sizing:border-box;">
+        <main style="background:#fff;padding:32px 24px;border-radius:20px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(20,35,70,.08);">
+          <div style="font-size:42px;margin-bottom:12px;">🔐</div>
+          <h1 style="color:#15213a;font-size:23px;margin:0 0 12px;">Return to ZannyPay</h1>
+          <p style="font-size:15px;color:#596579;line-height:1.6;margin:0 0 24px;">Your checkout has ended. ZannyPay will securely verify the payment before updating your wallet. This page does not confirm that a payment succeeded.</p>
+          <a href="${safeReturnUrl}" style="display:block;background:#2458d3;color:#fff;text-decoration:none;padding:15px;border-radius:12px;font-weight:700;">Return to app</a>
+        </main>
+        <script>setTimeout(function(){ window.location.href = ${scriptReturnUrl}; }, 700);</script>
       </body>
       </html>
     `;
-    return res.status(200).send(html);
+    return res.status(200).type('html').send(html);
   }
 
   // NOTE: The actual Paystack webhook lives at POST /paystack/webhook
