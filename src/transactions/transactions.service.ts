@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   ForbiddenException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '@nestjs-modules/mailer';
@@ -154,6 +155,15 @@ export class TransactionsService {
       recipientName,
       idempotencyKey,
     } = transferDto;
+
+    // Never allow an explicitly selected external bank to fall through to
+    // the internal ZannyPay account lookup. The production main branch does
+    // not yet have a verified outgoing payout adapter.
+    if (bank && bank !== 'ZannyPay') {
+      throw new ServiceUnavailableException(
+        'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
+      );
+    }
 
     const existing = await this.findExistingByIdempotencyKey(
       userId,
@@ -311,7 +321,12 @@ export class TransactionsService {
             senderName: sender.name,
           };
         } else {
-          // --- EXTERNAL TRANSFER ---
+          // A clearing-account journal is not proof that a destination bank
+          // received funds. Reject before any wallet or transaction write.
+          throw new ServiceUnavailableException(
+            'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
+          );
+          // --- EXTERNAL TRANSFER (intentionally disabled until a real rail exists) ---
           await tx.wallet.update({
             where: { userId: sender.id },
             data: { balance: { decrement: amount } },
