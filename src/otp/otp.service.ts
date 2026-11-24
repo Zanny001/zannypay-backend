@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
@@ -85,7 +86,7 @@ export class OtpService {
     const code = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
     const codeHash = await bcrypt.hash(code, 10);
 
-    await this.prisma.otpCode.create({
+    const record = await this.prisma.otpCode.create({
       data: {
         target,
         purpose,
@@ -94,7 +95,21 @@ export class OtpService {
       },
     });
 
-    await this.deliveryProvider.send(target, code, purpose);
+    try {
+      await this.deliveryProvider.send(target, code, purpose);
+    } catch {
+      // A failed provider request must not leave an unusable code behind:
+      // otherwise the target is blocked by the resend cooldown even though
+      // no OTP reached them. Delete only this newly issued record.
+      try {
+        await this.prisma.otpCode.delete({ where: { id: record.id } });
+      } catch {
+        this.logger.error('Could not clean up an OTP after delivery failure');
+      }
+      throw new ServiceUnavailableException(
+        'OTP delivery is temporarily unavailable. Please try again later.',
+      );
+    }
     this.logger.log(
       `OTP issued for purpose ${purpose} via provider '${this.deliveryProvider.name}'`,
     );
