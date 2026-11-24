@@ -426,7 +426,7 @@ export class VtpassPaymentsService {
           { providerLastCheckedAt: { lt: staleBefore } },
         ],
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [\n        { providerLastCheckedAt: { sort: 'asc', nulls: 'first' } },\n        { createdAt: 'asc' },\n      ],
       take: 50,
     });
     for (const transaction of pending) {
