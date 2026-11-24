@@ -22,7 +22,7 @@ export function productionReadinessErrors(env: Env = process.env): string[] {
   if (!env.CORS_ORIGINS?.split(',').map((value) => value.trim()).filter(Boolean).length) {
     errors.push('CORS_ORIGINS must contain the explicit admin/customer web origins in production.');
   }
-  if (env.STORAGE_DRIVER !== 's3') {
+  if (!env.PAYSTACK_SECRET_KEY) {\n    errors.push('PAYSTACK_SECRET_KEY must be configured for signed Paystack webhook verification in production.');\n  }\n  if (env.STORAGE_DRIVER !== 's3') {
     errors.push('STORAGE_DRIVER must be s3 in production; local/inline storage is not durable multi-instance storage.');
   }
 
