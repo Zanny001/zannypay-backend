@@ -781,18 +781,54 @@ export class TransactionsService {
         include: { user: true },
       });
 
-      if (!transaction) return { success: false, status: 'not_found' as const };
-      if (transaction.status === 'completed')
+      if (
+        !transaction ||
+        transaction.category !== 'funding' ||
+        transaction.type !== 'credit'
+      ) {
+        return { success: false, status: 'not_found' as const };
+      }
+      if (transaction.status === 'completed') {
         return {
           success: true,
           status: 'completed' as const,
           alreadyProcessed: true,
         };
+      }
+      if (transaction.status !== 'pending') {
+        return { success: false, status: 'not_pending' as const };
+      }
 
-      await tx.transaction.update({
-        where: { reference },
+      // Validate provider-reported amount/currency against our pending
+      // funding instruction. Paystack amounts are in kobo; ledger values
+      // are naira. Never credit a mismatched or non-NGN charge.
+      if (
+        providerData &&
+        (providerData.currency !== 'NGN' ||
+          !Number.isSafeInteger(providerData.amount) ||
+          providerData.amount !== Math.round(Number(transaction.amount) * 100))
+      ) {
+        return { success: false, status: 'provider_amount_mismatch' as const };
+      }
+
+      // Compare-and-set is the concurrency guard: if webhook and browser
+      // verification race, only one transaction can move pending -> completed
+      // and credit the wallet. A replay must not create a second journal.
+      const claimed = await tx.transaction.updateMany({
+        where: { reference, category: 'funding', type: 'credit', status: 'pending' },
         data: { status: 'completed' },
       });
+      if (claimed.count !== 1) {
+        const current = await tx.transaction.findUnique({ where: { reference } });
+        if (current?.status === 'completed') {
+          return {
+            success: true,
+            status: 'completed' as const,
+            alreadyProcessed: true,
+          };
+        }
+        return { success: false, status: 'not_pending' as const };
+      }
       await tx.wallet.update({
         where: { userId: transaction.userId },
         data: { balance: { increment: transaction.amount } },
@@ -899,7 +935,7 @@ export class TransactionsService {
         verifyData.status &&
         verifyData.data?.status === 'success'
       ) {
-        const result = await this.completeFundingTransaction(reference);
+        const result = await this.completeFundingTransaction(reference, {\n          amount: verifyData.data.amount,\n          currency: verifyData.data.currency,\n        });
         return { success: true, status: result.status };
       }
 
