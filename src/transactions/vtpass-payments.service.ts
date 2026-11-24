@@ -33,9 +33,9 @@ export class VtpassPaymentsService {
       payload?.content?.transactions?.status ?? payload?.transactions?.status ?? '',
     ).toLowerCase();
 
-    if (code === '000' && status === 'delivered') return 'completed';
+    if (['000', '001'].includes(code) && status === 'delivered') return 'completed';
     if (
-      (code === '000' && ['failed', 'reversed'].includes(status)) ||
+      (['000', '001'].includes(code) && ['failed', 'reversed'].includes(status)) ||
       code === '016' ||
       code === '091'
     ) {
