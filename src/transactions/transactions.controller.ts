@@ -13,6 +13,8 @@ import type { Response } from 'express';
 import { TransactionsService } from './transactions.service';
 import { VtpassClient } from './vtpass.client';
 import { VtpassCustomerVerifyDto } from './dto/vtpass-customer-verify.dto';
+import { VtpassBillPurchaseDto } from './dto/vtpass-bill-purchase.dto';
+import { VtpassPaymentsService } from './vtpass-payments.service';
 import { TransferDto } from './dto/transfer.dto';
 import { FundDto } from './dto/fund.dto';
 import { BillDto } from './dto/bill.dto';
@@ -25,6 +27,7 @@ export class TransactionsController {
   constructor(
     private readonly transactionsService: TransactionsService,
     private readonly vtpassClient: VtpassClient,
+    private readonly vtpassPayments: VtpassPaymentsService,
   ) {}
 
   // Read-only VTpass sandbox catalogue. This exposes provider-defined service
@@ -50,6 +53,22 @@ export class TransactionsController {
       billersCode: payload.billersCode.trim(),
       ...(payload.type ? { type: payload.type.trim() } : {}),
     });
+  }
+
+  // Actual bill purchases are sandbox-only and remain disabled unless the
+  // explicit VTPASS_BILL_PAYMENTS_ENABLED feature flag is set after testing.
+  @UseGuards(JwtAuthGuard)
+  @Post('bill-purchase')
+  async purchaseBill(@Req() req, @Body() payload: VtpassBillPurchaseDto) {
+    const userId = req.user.sub || req.user.userId;
+    return this.vtpassPayments.purchase(userId, payload);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('bill-transactions/:id')
+  async getBillTransaction(@Req() req, @Param('id') id: string) {
+    const userId = req.user.sub || req.user.userId;
+    return this.vtpassPayments.getTransaction(userId, id);
   }
 
   @UseGuards(JwtAuthGuard)
