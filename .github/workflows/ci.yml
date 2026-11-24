@@ -1,5 +1,8 @@
 name: Backend hotfix CI
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: ['hotfix/**']
@@ -15,8 +18,20 @@ jobs:
         with:
           node-version: 22.11
           cache: npm
+      - name: Refresh dependency lockfile on security branch
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/hotfix/dependency-security-2026-11') && !contains(github.event.head_commit.message, '[dependency-lock-updated]')
+        run: npm install && npm audit fix
       - run: npm ci
       - run: npm test -- --runInBand
       - run: npm run build
       - run: npx prettier --write src/main.ts src/transactions/paystack-signature.spec.ts src/transactions/paystack-signature.ts src/transactions/paystack-webhook.controller.ts src/transactions/transactions.service.spec.ts src/transactions/transactions.service.ts test/mocks/nest-schedule.ts
       - run: npm run lint
+      - name: Commit validated dependency lockfile
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/hotfix/dependency-security-2026-11') && !contains(github.event.head_commit.message, '[dependency-lock-updated]')
+        run: |
+          git add package.json package-lock.json
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "[dependency-lock-updated] refresh vulnerable dependencies"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
