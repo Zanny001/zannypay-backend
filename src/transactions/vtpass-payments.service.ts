@@ -218,6 +218,7 @@ export class VtpassPaymentsService {
       });
     } catch (error: any) {
       this.logger.warn(`VTpass purchase outcome uncertain for ${requestId}; transaction left pending for requery.`);
+      await this.prisma.transaction.updateMany({ where: { id: reserved.transaction.id, status: 'pending' }, data: { providerStatus: 'purchase_response_unknown', providerLastCheckedAt: new Date() } });
       const current = await this.prisma.transaction.findUnique({
         where: { id: reserved.transaction.id },
       });
@@ -342,6 +343,10 @@ export class VtpassPaymentsService {
         status: 'pending',
         providerRequestId: { not: null },
         createdAt: { lt: staleBefore },
+        OR: [
+          { providerLastCheckedAt: null },
+          { providerLastCheckedAt: { lt: staleBefore } },
+        ],
       },
       orderBy: { createdAt: 'asc' },
       take: 50,
