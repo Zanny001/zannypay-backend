@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -92,4 +92,48 @@ describe('TransactionsService', () => {
     expect(tx.transaction.create).not.toHaveBeenCalled();
     (bcrypt.compare as jest.Mock).mockReset().mockResolvedValue(true);
   });
+  it('rejects malformed bank account numbers before calling Paystack', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    await expect(
+      service.resolvePaystackBankAccount('12345', '057'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it('returns the verified account name from Paystack', async () => {
+    const originalSecret = process.env.PAYSTACK_SECRET_KEY;
+    process.env.PAYSTACK_SECRET_KEY = 'sk_test_unit_test_only';
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: true,
+        data: {
+          account_number: '0123456789',
+          account_name: 'Example Recipient',
+          bank_name: 'Zenith Bank',
+        },
+      }),
+    } as Response);
+
+    try {
+      const result = await service.resolvePaystackBankAccount(
+        '0123456789',
+        '057',
+      );
+      expect(result).toEqual({
+        accountNumber: '0123456789',
+        accountName: 'Example Recipient',
+        bankCode: '057',
+        bankName: 'Zenith Bank',
+        verified: true,
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+      if (originalSecret === undefined) delete process.env.PAYSTACK_SECRET_KEY;
+      else process.env.PAYSTACK_SECRET_KEY = originalSecret;
+    }
+  });
+
 });
