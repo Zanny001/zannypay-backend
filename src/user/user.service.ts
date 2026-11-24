@@ -69,7 +69,9 @@ export class UserService {
       // SavingsService.ANNUAL_INTEREST_RATE for why savingsApy is now a
       // real, backend-sourced value instead of the hardcoded mobile
       // constant it used to silently fall back to.
-      savingsApy: SavingsService.ANNUAL_INTEREST_RATE,
+      savingsApy: SavingsService.isInterestEnabled()
+        ? SavingsService.ANNUAL_INTEREST_RATE
+        : 0,
       lastInterestEarned:
         await this.savingsService.getLastInterestEarned(userId),
     };
