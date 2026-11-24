@@ -1,30 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 
-// Master audit: "this entire service is mock/local card data — cardNumber
-// and expiry are generated in-process, not issued by a real processor.
-// Before this is a real product, swap this for an actual card-issuing
-// integration (Stripe Issuing, Marqeta, a licensed local processor) with
-// tokenized storage."
-//
-// This interface is that swap point. CardsService talks only to
-// CardIssuingProvider — never generates a card number itself — so
-// switching MockCardIssuingProvider for a real one later is a one-line
-// change in cards.module.ts, not a rewrite of CardsService.
+// A real card issuer must replace this development-only provider before
+// customers can receive genuine virtual cards or network-level controls.
 export interface IssuedCard {
-  cardNumber: string | null; // full display number, ONLY for a provider that's genuinely comfortable returning it (the mock one); a real processor should return null here and populate providerRef instead
+  cardNumber: string | null;
   last4: string;
   expiry: string;
-  providerRef: string | null; // opaque processor token — what a real integration would actually key off of
+  providerRef: string | null;
 }
 
 export interface CardIssuingProvider {
   readonly name: string;
   issueCard(params: { userId: string; network: string }): Promise<IssuedCard>;
-  // Real processors (Stripe Issuing, Marqeta) require confirming the
-  // freeze/unfreeze at the network level, not just in this database — a
-  // frozen-in-our-DB-but-still-live-at-the-network card is a real
-  // fintech incident. The mock provider is a no-op here since there's no
-  // actual network to call.
   setFrozen(providerRef: string | null, isFrozen: boolean): Promise<void>;
 }
 
@@ -38,13 +25,17 @@ export class MockCardIssuingProvider implements CardIssuingProvider {
     userId: string;
     network: string;
   }): Promise<IssuedCard> {
-    // Preserves the exact prior generation logic — same visual/behavioral
-    // result as before this refactor, just now behind the interface.
+    if (process.env.NODE_ENV === 'production') {
+      throw new ServiceUnavailableException(
+        'Virtual card issuing is not configured. No card has been issued.',
+      );
+    }
+
     const randomDigits = Math.floor(
       10000000 + Math.random() * 90000000,
     ).toString();
     const prefix =
-      network === 'VISA' ? '4532' : network === 'VERVE' ? '5061' : '54127589'; // rough network-realistic BIN prefixes for display purposes only — never real issuer BINs
+      network === 'VISA' ? '4532' : network === 'VERVE' ? '5061' : '54127589';
     const cardNumber = `${prefix}${randomDigits}`.slice(0, 16).padEnd(16, '0');
 
     const now = new Date();
@@ -60,9 +51,10 @@ export class MockCardIssuingProvider implements CardIssuingProvider {
   }
 
   async setFrozen(): Promise<void> {
-    // No-op — nothing to call. A real provider implementation MUST call
-    // out to the processor here and throw if that call fails, so a
-    // freeze that didn't actually take at the network level never gets
-    // recorded as successful in our own database.
+    if (process.env.NODE_ENV === 'production') {
+      throw new ServiceUnavailableException(
+        'Virtual card controls are not connected to a card issuer.',
+      );
+    }
   }
 }
