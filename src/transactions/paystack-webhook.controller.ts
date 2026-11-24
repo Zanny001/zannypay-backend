@@ -23,24 +23,21 @@ export class PaystackWebhookController {
     }
 
     const signingHeader = req.headers['paystack-signature'];
-    if (signingHeader !== undefined) {
-      const signingSecret = process.env.PAYSTACK_WEBHOOK_SECRET;
-      if (!signingSecret) {
-        throw new ServiceUnavailableException(
-          'Paystack webhook signing secret is not configured. Add PAYSTACK_WEBHOOK_SECRET from the Paystack dashboard.',
-        );
-      }
+    const signingSecret = process.env.PAYSTACK_WEBHOOK_SECRET;
+    if (signingHeader !== undefined && signingSecret) {
       if (!verifyPaystackSigningSecret(rawBody, signingHeader, signingSecret)) {
         throw new UnauthorizedException('Invalid Paystack webhook signature.');
       }
     } else {
-      // Backward compatibility only while Paystack still sends the legacy
-      // header. Do not remove PAYSTACK_SECRET_KEY until the new header is
-      // observed and verified in both test and live environments.
+      // Until the whsec_ secret is configured (or before Paystack has enabled
+      // the new header for this environment), retain legacy verification.
+      // Paystack sends both headers while the API secret remains active.
       const secret = process.env.PAYSTACK_SECRET_KEY;
       if (!secret) {
         throw new ServiceUnavailableException(
-          'Paystack webhook verification is not configured.',
+          signingHeader !== undefined
+            ? 'Configure PAYSTACK_WEBHOOK_SECRET to verify Paystack-Signature.'
+            : 'Paystack webhook verification is not configured.',
         );
       }
       const legacySignature = req.headers['x-paystack-signature'];
