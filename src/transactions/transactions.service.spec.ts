@@ -8,6 +8,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { BeneficiariesService } from '../beneficiaries/beneficiaries.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import * as bcrypt from 'bcrypt';
 
 describe('TransactionsService', () => {
   let service: TransactionsService;
@@ -62,10 +63,34 @@ describe('TransactionsService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('rejects external bank transfers before opening a money-movement transaction', async () => {
+  it('rejects external bank transfers before any wallet mutation', async () => {
+    jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+    const tx = {
+      user: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'user-1',
+          isFrozen: false,
+          pin: 'hashed-pin',
+          accountNumber: '0000000001',
+          phone: '08000000000',
+          businessAccountNumber: null,
+          wallet: { balance: 100000 },
+          email: 'user@example.test',
+        }),
+      },
+      wallet: { update: jest.fn() },
+      transaction: { create: jest.fn() },
+    };
+    prisma.$transaction.mockImplementation((callback) => callback(tx));
     await expect(
-      service.transferFunds('user-1', { idempotencyKey: undefined } as any),
+      service.transferFunds('user-1', {
+        recipientAccount: '9999999999',
+        amount: 1000,
+        pin: '1234',
+      } as any),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.wallet.update).not.toHaveBeenCalled();
+    expect(tx.transaction.create).not.toHaveBeenCalled();
+    jest.restoreAllMocks();
   });
 });
