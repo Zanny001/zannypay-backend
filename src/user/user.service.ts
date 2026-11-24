@@ -65,10 +65,9 @@ export class UserService {
       user: this.sanitizeUser(user),
       balance: user.wallet?.balance ? Number(user.wallet.balance) : 0,
       transactions: user.transactions || [],
-      // Powers the mobile Home screen's earnings strip — see
-      // SavingsService.ANNUAL_INTEREST_RATE for why savingsApy is now a
-      // real, backend-sourced value instead of the hardcoded mobile
-      // constant it used to silently fall back to.
+      // The mobile Home screen reads this backend-sourced rate. Production
+      // returns 0 while interest accrual is paused pending a funded yield
+      // source; the development/test rate is never advertised as production.
       savingsApy: SavingsService.isInterestEnabled()
         ? SavingsService.ANNUAL_INTEREST_RATE
         : 0,
