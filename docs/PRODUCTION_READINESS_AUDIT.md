@@ -18,7 +18,7 @@ This is a source-level review of the supplied mobile v19 Ultra, admin v10 Ultra,
 - Paystack webhook HMAC validation now uses the preserved raw HTTP request body, not a re-serialized JSON object.
 - Webhook processing rejects missing secrets, malformed signatures, missing references, non-NGN charges and invalid kobo amounts.
 - Funding completion now claims only a pending funding credit with a conditional database update and checks the provider amount against the locally initiated amount before wallet crediting. This is intended to make webhook delivery and browser-return verification safe to race; the exact database concurrency behavior still requires integration testing against the deployed PostgreSQL version.
-- Added focused tests for exact-byte HMAC verification, malformed signatures and absent secrets. GitHub Actions is validating the complete backend suite/build/lint on this branch.
+- Added focused tests for exact-byte HMAC verification, malformed signatures and absent secrets. The webhook controller now returns a non-2xx response when an authenticated event cannot be applied (for example, an unknown funding reference or provider amount mismatch), rather than silently acknowledging it. Controller regression tests cover missing secrets, invalid signatures, unapplied funding events and successful/replayed events. GitHub Actions is validating the complete backend suite/build/lint on this branch.
 
 ## Required production-readiness work
 ### Backend
