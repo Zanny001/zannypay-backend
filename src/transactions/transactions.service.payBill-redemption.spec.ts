@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
 import * as bcrypt from 'bcrypt';
 import { TransactionsService } from './transactions.service';
@@ -11,11 +12,9 @@ import { AnalyticsService } from '../analytics/analytics.service';
 
 jest.mock('bcrypt');
 
-// Confirms the redemption math from resolvePointsRedemption.spec.ts is
-// actually wired into payBill's real effects — the wallet debit, the
-// points decrement, and what gets recorded on the transaction row — not
-// just correct in isolation.
-describe('TransactionsService.payBill — points redemption wiring', () => {
+// Until a real biller adapter can confirm fulfilment, bill payments must
+// fail before PIN validation, wallet debit, points redemption or DB writes.
+describe('TransactionsService.payBill — provider safety gate', () => {
   let service: TransactionsService;
   let prisma: any;
   let tx: any;
@@ -93,44 +92,34 @@ describe('TransactionsService.payBill — points redemption wiring', () => {
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
   });
 
-  it('debits the wallet for the reduced amount and decrements reward points when points are redeemed', async () => {
-    await service.payBill('user-1', {
-      billerName: 'IKEDC',
-      category: 'Electricity',
-      amount: 2000,
-      pin: '1234',
-      pointsToRedeem: 500,
-    });
+  it('rejects bill payments before wallet, points or transaction mutation', async () => {
+    await expect(
+      service.payBill('user-1', {
+        billerName: 'IKEDC',
+        category: 'Electricity',
+        amount: 2000,
+        pin: '1234',
+        pointsToRedeem: 500,
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
 
-    expect(tx.wallet.update).toHaveBeenCalledWith({
-      where: { userId: 'user-1' },
-      data: { balance: { decrement: 1950 } },
-    });
-    expect(tx.user.update).toHaveBeenCalledWith({
-      where: { id: 'user-1' },
-      data: { rewardPoints: { decrement: 500 } },
-    });
-
-    const createCall = tx.transaction.create.mock.calls[0][0];
-    expect(createCall.data.amount).toBe(2000); // full purchase value, unchanged
-    expect(createCall.data.pointsRedeemed).toBe(500);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.wallet.update).not.toHaveBeenCalled();
+    expect(tx.user.update).not.toHaveBeenCalled();
+    expect(tx.transaction.create).not.toHaveBeenCalled();
   });
 
-  it('debits the full amount and never touches reward points when none are redeemed', async () => {
-    await service.payBill('user-1', {
-      billerName: 'IKEDC',
-      category: 'Electricity',
-      amount: 2000,
-      pin: '1234',
-    });
+  it('does not redeem reward points while bill payments are disabled', async () => {
+    await expect(
+      service.payBill('user-1', {
+        billerName: 'IKEDC',
+        category: 'Electricity',
+        amount: 2000,
+        pin: '1234',
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
 
-    expect(tx.wallet.update).toHaveBeenCalledWith({
-      where: { userId: 'user-1' },
-      data: { balance: { decrement: 2000 } },
-    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(tx.user.update).not.toHaveBeenCalled();
-
-    const createCall = tx.transaction.create.mock.calls[0][0];
-    expect(createCall.data.pointsRedeemed).toBe(0);
   });
 });
