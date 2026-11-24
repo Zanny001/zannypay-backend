@@ -480,7 +480,8 @@ export class TransactionsService {
     const amountInKobo = Math.round(amount * 100);
     if (
       !Number.isFinite(amount) ||
-      amount <= 0 ||
+      amount < 100 ||
+      amount > 10000000 ||
       !Number.isSafeInteger(amountInKobo) ||
       Math.abs(amountInKobo / 100 - amount) > 0.000001
     ) {
