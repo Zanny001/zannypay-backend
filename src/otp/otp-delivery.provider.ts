@@ -88,19 +88,27 @@ export class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
       process.env.TERMII_BASE_URL || 'https://api.ng.termii.com'
     ).replace(/\/$/, '');
     const messagePurpose = purpose.toLowerCase().replace(/_/g, ' ');
-    const response = await fetch(`${baseUrl}/api/sms/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: apiKey,
-        to: phone,
-        from: senderId,
-        sms: `Your ZannyPay ${messagePurpose} code is ${code}. It expires in 10 minutes. Do not share it with anyone. If you did not request it, ignore this message.`,
-        type: 'plain',
-        channel: process.env.TERMII_CHANNEL || 'dnd',
-      }),
-      signal: AbortSignal.timeout(10000),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}/api/sms/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: apiKey,
+          to: phone,
+          from: senderId,
+          sms: `Your ZannyPay ${messagePurpose} code is ${code}. It expires in 10 minutes. Do not share it with anyone. If you did not request it, ignore this message.`,
+          type: 'plain',
+          channel: process.env.TERMII_CHANNEL || 'dnd',
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch {
+      this.logger.error('Termii SMS network request failed or timed out');
+      throw new ServiceUnavailableException(
+        'SMS delivery is temporarily unavailable. Please try again later.',
+      );
+    }
 
     if (!response.ok) {
       this.logger.error(
@@ -111,11 +119,19 @@ export class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
       );
     }
 
-    const result = (await response.json()) as {
-      message?: string;
-      message_id?: string;
-      code?: string;
-    };
+    let result: { message?: string; message_id?: string; code?: string };
+    try {
+      result = (await response.json()) as {
+        message?: string;
+        message_id?: string;
+        code?: string;
+      };
+    } catch {
+      this.logger.error('Termii returned an unreadable SMS response');
+      throw new ServiceUnavailableException(
+        'SMS delivery could not be confirmed. Please try again later.',
+      );
+    }
     // Termii's documented success payload uses code="ok" alongside a
     // message_id. Treat other codes as failures; do not reject valid sends.
     if (
