@@ -73,7 +73,7 @@ export class IntegrationStatusService {
         airtimeDataAndBills: status(
           false,
           env.VTPASS_API_KEY && env.VTPASS_PUBLIC_KEY && env.VTPASS_SECRET_KEY
-            ? 'VTpass sandbox client is being prepared. Credentials being present does not prove authentication, service validation, transaction settlement, or production approval. Customer bill payments remain disabled.'
+            ? 'VTpass sandbox client and authenticated read-only service/variation catalogue are implemented. Credentials being present does not prove authentication or provider approval. Customer bill payments remain disabled until customer validation, idempotent wallet/ledger settlement, reversal and reconciliation are implemented and sandbox-tested.'
             : 'Configure VTPASS_API_KEY, VTPASS_PUBLIC_KEY and VTPASS_SECRET_KEY for sandbox integration. Customer bill payments remain disabled.',
           true,
         ),
