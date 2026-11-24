@@ -1079,6 +1079,11 @@ export class TransactionsService {
         verifyData.status &&
         verifyData.data?.status === 'success'
       ) {
+        // Never let a successful provider response for a different reference
+        // settle this user's pending funding instruction.
+        if (verifyData.data.reference !== reference) {
+          return { success: false, status: 'provider_reference_mismatch' };
+        }
         const result = await this.completeFundingTransaction(reference, {
           amount: verifyData.data.amount,
           currency: verifyData.data.currency,
