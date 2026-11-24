@@ -153,9 +153,7 @@ export class TransactionsService {
       recipientAccount,
       amount,
       pin,
-      bank,
       note,
-      recipientName,
       idempotencyKey,
     } = transferDto;
 
