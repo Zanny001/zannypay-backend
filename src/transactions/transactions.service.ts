@@ -941,7 +941,10 @@ export class TransactionsService {
         verifyData.status &&
         verifyData.data?.status === 'success'
       ) {
-        const result = await this.completeFundingTransaction(reference, {\n          amount: verifyData.data.amount,\n          currency: verifyData.data.currency,\n        });
+        const result = await this.completeFundingTransaction(reference, {
+          amount: verifyData.data.amount,
+          currency: verifyData.data.currency,
+        });
         return { success: true, status: result.status };
       }
 
