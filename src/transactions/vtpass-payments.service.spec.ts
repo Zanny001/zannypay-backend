@@ -6,7 +6,7 @@ import { VtpassPaymentsService } from './vtpass-payments.service';
 
 describe('VtpassPaymentsService', () => {
   let service: VtpassPaymentsService;
-  let vtpass: { getServiceVariations: jest.Mock; verifyCustomer: jest.Mock; assertPurchaseConfigured: jest.Mock; createRequestId: jest.Mock; purchase: jest.Mock; requery: jest.Mock };
+  let vtpass: { getServices: jest.Mock; getServiceVariations: jest.Mock; verifyCustomer: jest.Mock; assertPurchaseConfigured: jest.Mock; createRequestId: jest.Mock; purchase: jest.Mock; requery: jest.Mock };
   let prisma: any;
   let ledger: any;
 
@@ -48,33 +48,64 @@ describe('VtpassPaymentsService', () => {
   });
 
   it('uses provider catalogue price rather than a client-supplied price', async () => {
+    vtpass.getServices.mockResolvedValue({
+      content: [{
+        serviceID: 'test-service',
+        name: 'Test Service',
+        minimium_amount: '100',
+        maximum_amount: '10000',
+        product_type: 'fix',
+      }],
+    });
     vtpass.getServiceVariations.mockResolvedValue({
       content: {
         variations: [{
           variation_code: 'monthly-1',
           variation_amount: '2500.00',
-          fixedPrice: true,
+          fixedPrice: 'Yes',
           name: 'Monthly plan',
         }],
       },
     });
-    await expect((service as any).resolveFixedPrice('test-service', 'monthly-1', 2500))
+    await expect((service as any).resolveProductPrice('data', 'test-service', 'monthly-1', 2500))
       .resolves.toEqual({ amount: 2500, productName: 'Monthly plan' });
-    await expect((service as any).resolveFixedPrice('test-service', 'monthly-1', 2000))
+    await expect((service as any).resolveProductPrice('data', 'test-service', 'monthly-1', 2000))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('rejects products without a provider-confirmed fixed price', async () => {
-    vtpass.getServiceVariations.mockResolvedValue({
-      content: {
-        variations: [{
-          variation_code: 'open-amount',
-          variation_amount: '0',
-          fixedPrice: false,
-        }],
-      },
+  it('accepts flexible amounts only within provider-published minimum and maximum', async () => {
+    vtpass.getServices.mockResolvedValue({
+      content: [{
+        serviceID: 'mtn',
+        name: 'MTN Airtime',
+        minimium_amount: '50',
+        maximum_amount: '50000',
+        product_type: 'fix',
+      }],
     });
-    await expect((service as any).resolveFixedPrice('test-service', 'open-amount'))
+    await expect((service as any).resolveProductPrice('airtime', 'mtn', undefined, 500))
+      .resolves.toEqual({ amount: 500, productName: 'MTN Airtime' });
+    await expect((service as any).resolveProductPrice('airtime', 'mtn', undefined, 25))
+      .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('requires a variation for electricity and subscription products', async () => {
+    vtpass.getServices.mockResolvedValue({
+      content: [{
+        serviceID: 'ikeja-electric',
+        name: 'Ikeja Electric',
+        minimium_amount: '100',
+        maximum_amount: '100000',
+        product_type: 'fix',
+      }],
+    });
+    await expect((service as any).resolveProductPrice('electricity', 'ikeja-electric', undefined, 1000))
+      .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects services that are not in the selected provider catalogue', async () => {
+    vtpass.getServices.mockResolvedValue({ content: [] });
+    await expect((service as any).resolveProductPrice('data', 'unknown-service', undefined, 500))
       .rejects.toBeInstanceOf(BadRequestException);
   });
 
