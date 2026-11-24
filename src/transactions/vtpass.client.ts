@@ -26,9 +26,9 @@ export class VtpassClient {
       );
     }
     return {
-      apiKey: VTPASS_API_KEY!,
-      publicKey: VTPASS_PUBLIC_KEY!,
-      secretKey: VTPASS_SECRET_KEY!,
+      apiKey: VTPASS_API_KEY,
+      publicKey: VTPASS_PUBLIC_KEY,
+      secretKey: VTPASS_SECRET_KEY,
     };
   }
 
