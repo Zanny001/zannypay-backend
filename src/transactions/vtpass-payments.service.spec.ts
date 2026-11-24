@@ -141,9 +141,11 @@ describe('VtpassPaymentsService', () => {
     expect(tx.transaction.create).not.toHaveBeenCalled();
   });
 
-  it('keeps purchases disabled unless the explicit feature flag is enabled', async () => {
+  it('keeps purchases disabled unless both sandbox gates are enabled', async () => {
     const previous = process.env.VTPASS_BILL_PAYMENTS_ENABLED;
+    const previousVerified = process.env.VTPASS_SANDBOX_VERIFIED;
     delete process.env.VTPASS_BILL_PAYMENTS_ENABLED;
+    delete process.env.VTPASS_SANDBOX_VERIFIED;
     try {
       await expect(service.purchase('user-1', {} as any))
         .rejects.toBeInstanceOf(ServiceUnavailableException);
@@ -152,6 +154,7 @@ describe('VtpassPaymentsService', () => {
     } finally {
       if (previous === undefined) delete process.env.VTPASS_BILL_PAYMENTS_ENABLED;
       else process.env.VTPASS_BILL_PAYMENTS_ENABLED = previous;
+      if (previousVerified === undefined) delete process.env.VTPASS_SANDBOX_VERIFIED;
+      else process.env.VTPASS_SANDBOX_VERIFIED = previousVerified;
     }
-  });
-});
+  });});
