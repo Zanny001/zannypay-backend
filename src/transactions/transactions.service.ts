@@ -709,33 +709,74 @@ export class TransactionsService {
   }
   // whichever one fires first completes the transaction; the other is a
   // no-op thanks to the status check, so a payment is never credited twice.
-  private async completeFundingTransaction(reference: string) {
+  private async completeFundingTransaction(
+    reference: string,
+    providerData?: { amount: number; currency: string },
+  ) {
     const result = await this.prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({
         where: { reference },
         include: { user: true },
       });
 
-      if (!transaction) return { success: false, status: 'not_found' as const };
-      if (transaction.status === 'completed')
+      if (
+        !transaction ||
+        transaction.category !== 'funding' ||
+        transaction.type !== 'credit'
+      ) {
+        return { success: false, status: 'not_found' as const };
+      }
+      if (transaction.status === 'completed') {
         return {
           success: true,
           status: 'completed' as const,
           alreadyProcessed: true,
         };
+      }
+      if (transaction.status !== 'pending') {
+        return { success: false, status: 'not_pending' as const };
+      }
 
-      await tx.transaction.update({
-        where: { reference },
+      // Paystack reports NGN amounts in kobo; wallet and ledger values are
+      // stored in naira. A signed event is not enough: the exact amount and
+      // currency must also match the funding instruction we created.
+      if (
+        providerData &&
+        (providerData.currency !== 'NGN' ||
+          !Number.isSafeInteger(providerData.amount) ||
+          providerData.amount !== Math.round(Number(transaction.amount) * 100))
+      ) {
+        return { success: false, status: 'provider_amount_mismatch' as const };
+      }
+
+      // Compare-and-set prevents a webhook and a browser verification call
+      // from both crediting the same pending funding transaction.
+      const claimed = await tx.transaction.updateMany({
+        where: {
+          reference,
+          category: 'funding',
+          type: 'credit',
+          status: 'pending',
+        },
         data: { status: 'completed' },
       });
+      if (claimed.count !== 1) {
+        const current = await tx.transaction.findUnique({ where: { reference } });
+        if (current?.status === 'completed') {
+          return {
+            success: true,
+            status: 'completed' as const,
+            alreadyProcessed: true,
+          };
+        }
+        return { success: false, status: 'not_pending' as const };
+      }
+
       await tx.wallet.update({
         where: { userId: transaction.userId },
         data: { balance: { increment: transaction.amount } },
       });
 
-      // Debit the Paystack clearing account (funds ZannyPay is holding
-      // pending settlement to its own bank account — that settlement leg
-      // is outside this ledger's scope), credit the customer's wallet.
       const walletAccount = await this.ledgerService.getOrCreateCustomerAccount(
         LedgerAccountType.CUSTOMER_WALLET,
         transaction.userId,
@@ -774,10 +815,6 @@ export class TransactionsService {
       return { success: true, status: 'completed' as const, transaction };
     });
 
-    // Only run the fraud engine on the actual credit event, not on a
-    // replayed webhook/verify call for a top-up that was already completed
-    // (the webhook and the manual verify-on-return-from-checkout path can
-    // both fire for the same payment; only the first one is a real event).
     if (
       result.success &&
       !result.alreadyProcessed &&
@@ -794,12 +831,15 @@ export class TransactionsService {
     return {
       success: result.success,
       status: result.status,
-      alreadyProcessed: (result as any).alreadyProcessed,
+      alreadyProcessed: 'alreadyProcessed' in result ? result.alreadyProcessed : false,
     };
   }
 
-  async handlePaystackWebhook(reference: string) {
-    const result = await this.completeFundingTransaction(reference);
+  async handlePaystackWebhook(
+    reference: string,
+    providerData: { amount: number; currency: string },
+  ) {
+    const result = await this.completeFundingTransaction(reference, providerData);
     return { handled: true, ...result };
   }
 
@@ -834,8 +874,11 @@ export class TransactionsService {
         verifyData.status &&
         verifyData.data?.status === 'success'
       ) {
-        const result = await this.completeFundingTransaction(reference);
-        return { success: true, status: result.status };
+        const result = await this.completeFundingTransaction(reference, {
+          amount: verifyData.data.amount,
+          currency: verifyData.data.currency,
+        });
+        return { success: result.success, status: result.status };
       }
 
       // Paystack hasn't confirmed success yet (still processing, or the
