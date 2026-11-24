@@ -105,6 +105,9 @@ export class VtpassPaymentsService {
     let amount: number;
 
     if (fixed && Number.isFinite(catalogueAmount) && catalogueAmount > 0) {
+      if (catalogueAmount < minimum || catalogueAmount > maximum) {
+        throw new BadRequestException('The provider catalogue price is outside the published service limits.');
+      }
       amount = Math.round(catalogueAmount * 100) / 100;
       if (requestedAmount !== undefined && Math.abs(Number(requestedAmount) - amount) > 0.001) {
         throw new BadRequestException('The bill amount does not match the current provider price. Refresh and try again.');
