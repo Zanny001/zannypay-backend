@@ -94,14 +94,23 @@ export class VtpassClient {
   }
 
   createRequestId(now = new Date()): string {
-    const lagos = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Lagos' }));
-    const pad = (n: number) => String(n).padStart(2, '0');
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Africa/Lagos',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(now);
+    const value = (type: string) =>
+      parts.find((part) => part.type === type)?.value ?? '';
     const prefix =
-      String(lagos.getFullYear()) +
-      pad(lagos.getMonth() + 1) +
-      pad(lagos.getDate()) +
-      pad(lagos.getHours()) +
-      pad(lagos.getMinutes());
+      value('year') +
+      value('month') +
+      value('day') +
+      value('hour') +
+      value('minute');
     return prefix + randomBytes(5).toString('hex').toUpperCase();
   }
 }
