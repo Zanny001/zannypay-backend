@@ -12,6 +12,7 @@ describe('VtpassPaymentsService', () => {
 
   beforeEach(() => {
     vtpass = {
+      getServices: jest.fn(),
       getServiceVariations: jest.fn(),
       verifyCustomer: jest.fn(),
       assertPurchaseConfigured: jest.fn(),
