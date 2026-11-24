@@ -24,7 +24,9 @@ describe('IntegrationStatusService', () => {
     expect(result.integrations.phoneOtp.configured).toBe(false);
     expect(result.integrations.emailVerification.configured).toBe(false);
     expect(result.integrations.externalBankPayouts.configured).toBe(false);
-    expect(result.integrations.virtualCardIssuing.status).toBe('not_integrated');
+    expect(result.integrations.virtualCardIssuing.status).toBe(
+      'not_integrated',
+    );
   });
 
   it('reports credential presence without claiming live transaction readiness', () => {
@@ -40,7 +42,9 @@ describe('IntegrationStatusService', () => {
     const result = new IntegrationStatusService().getStatus();
     expect(result.integrations.phoneOtp.configured).toBe(true);
     expect(result.integrations.emailVerification.configured).toBe(true);
-    expect(result.integrations.externalBankPayouts.status).toBe('not_integrated');
+    expect(result.integrations.externalBankPayouts.status).toBe(
+      'not_integrated',
+    );
     expect(result.disclaimer).toContain('does not prove');
   });
 });
