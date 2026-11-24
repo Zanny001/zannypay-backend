@@ -36,7 +36,7 @@ export function verifyPaystackSigningSecret(
     const key = part.slice(0, separator).trim();
     const value = part.slice(separator + 1).trim();
     if (key === 't') {
-      if (timestamp !== null || !/^\\d{1,12}$/.test(value)) return false;
+      if (timestamp !== null || !/^\d{1,12}$/.test(value)) return false;
       timestamp = value;
     } else if (key === 'v1') {
       const colon = value.indexOf(':');
