@@ -23,6 +23,7 @@ import {
 } from '../analytics/analytics.service';
 import { formatNaira } from '../common/format-currency.util';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class TransactionsService {
@@ -475,61 +476,98 @@ export class TransactionsService {
   }
 
   async fundWallet(userId: string, fundDto: FundDto) {
-    const { amount } = fundDto;
+    const amount = Number(fundDto.amount);
+    const amountInKobo = Math.round(amount * 100);
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !Number.isSafeInteger(amountInKobo) ||
+      Math.abs(amountInKobo / 100 - amount) > 0.000001
+    ) {
+      throw new BadRequestException('Enter a valid funding amount with up to two decimal places.');
+    }
+
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      throw new ServiceUnavailableException(
+        'Wallet funding is temporarily unavailable because Paystack is not configured.',
+      );
+    }
+
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found.');
-    if (user.isFrozen)
+    if (user.isFrozen) {
       throw new ForbiddenException(
         'Your account is currently restricted. Please contact support.',
       );
+    }
 
-    const reference = `FND-${Date.now()}`;
+    // Persist the pending transaction before contacting Paystack. A very
+    // fast webhook can then always find the reference it needs to credit.
+    const reference = `FND-${randomUUID()}`;
+    const txn = await this.prisma.transaction.create({
+      data: {
+        userId,
+        type: 'credit',
+        category: 'funding',
+        title: 'Wallet Top-up',
+        subtitle: 'Paystack Checkout',
+        amount,
+        status: 'pending',
+        reference,
+      },
+    });
+
+    const backendUrl = (
+      process.env.BACKEND_URL || 'https://zannypay-backend.onrender.com'
+    ).replace(/\\/+$/, '');
+    const callbackUrl = `${backendUrl}/api/v1/wallet/payment-success`;
+
+    let paystackResponse: Response;
+    let resData: any;
     try {
-      const paystackResponse = await fetch(
+      paystackResponse = await fetch(
         'https://api.paystack.co/transaction/initialize',
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+            Authorization: `Bearer ${secret}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             email: user.email,
-            amount: Math.round(amount * 100),
+            amount: amountInKobo,
+            currency: 'NGN',
             reference,
-            callback_url: `${process.env.BACKEND_URL || 'http://localhost:4000'}/wallet/payment-success`,
+            callback_url: callbackUrl,
           }),
         },
       );
-
-      const resData = await paystackResponse.json();
-      if (!paystackResponse.ok || !resData.status)
-        throw new BadRequestException(resData.message);
-
-      const txn = await this.prisma.transaction.create({
-        data: {
-          userId,
-          type: 'credit',
-          category: 'funding',
-          title: 'Wallet Top-up',
-          subtitle: 'Paystack Checkout',
-          amount,
-          status: 'pending',
-          reference,
-        },
-      });
-
-      return {
-        success: true,
-        transactionId: txn.id,
-        authorizationUrl: resData.data.authorization_url,
-        reference,
-      };
-    } catch (error) {
-      throw new BadRequestException(
-        error.message || 'Payment gateway unavailable.',
+      resData = await paystackResponse.json();
+    } catch {
+      // The request may have reached Paystack even if the response was lost.
+      // Keep the record pending so webhook/verify reconciliation can settle it.
+      throw new ServiceUnavailableException(
+        `Paystack did not confirm the checkout initialization. Keep reference ${reference} and check its status before retrying.`,
       );
     }
+
+    if (!paystackResponse.ok || !resData?.status || !resData?.data?.authorization_url) {
+      await this.prisma.transaction.updateMany({
+        where: { id: txn.id, status: 'pending' },
+        data: { status: 'failed' },
+      });
+      throw new BadRequestException(
+        resData?.message || 'Paystack could not initialize this payment.',
+      );
+    }
+
+    return {
+      success: true,
+      transactionId: txn.id,
+      authorizationUrl: resData.data.authorization_url,
+      reference,
+    };
   }
 
   async payBill(userId: string, billDto: BillDto) {
