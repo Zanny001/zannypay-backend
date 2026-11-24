@@ -31,7 +31,6 @@ export class VtpassBillPurchaseDto {
 
   // Required for flexible products; for fixed variations it must match the
   // provider catalogue price exactly.
-  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(1)
   amount?: number;
