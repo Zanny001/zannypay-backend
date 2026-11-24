@@ -1,6 +1,6 @@
 // Scheduler infrastructure is not needed in unit tests. Avoid loading the
 // ESM-only NestJS scheduler package or starting cron timers.
-export const Cron = (..._args: unknown[]) => (
+export const Cron = () => (
   _target: object,
   _propertyKey: string,
   descriptor: PropertyDescriptor,
