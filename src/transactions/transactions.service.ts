@@ -1000,18 +1000,27 @@ export class TransactionsService {
     const localTxn = await this.prisma.transaction.findFirst({
       where: { reference, userId },
     });
-    if (!localTxn) throw new NotFoundException('Transaction not found.');
+    if (!localTxn || localTxn.category !== 'funding' || localTxn.type !== 'credit') {
+      throw new NotFoundException('Funding transaction not found.');
+    }
 
     if (localTxn.status === 'completed') {
       return { success: true, status: 'completed' };
     }
 
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      throw new ServiceUnavailableException(
+        'Paystack verification is not configured.',
+      );
+    }
+
     try {
       const verifyResponse = await fetch(
-        `https://api.paystack.co/transaction/verify/${reference}`,
+        `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
         {
           headers: {
-            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+            Authorization: `Bearer ${secret}`,
           },
         },
       );
