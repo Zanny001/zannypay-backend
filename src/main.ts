@@ -48,11 +48,18 @@ async function bootstrap() {
   // nothing on the money-movement endpoints, whose payloads are tiny.
   app.use(compression());
 
-  // Cross-Origin Resource Sharing (Allows your app to talk to the backend)
+  // Native mobile clients do not send browser Origin headers. For browser
+  // clients, use an explicit comma-separated allowlist when credentialed
+  // requests are required. A wildcard origin must never be combined with
+  // Access-Control-Allow-Credentials: true (browsers reject that response).
+  const corsOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: '*',
+    origin: corsOrigins.length ? corsOrigins : '*',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true,
+    credentials: corsOrigins.length > 0,
   });
 
   // Strict Payload Validation
