@@ -5,9 +5,10 @@ import {
   Req,
   Res,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
-import * as crypto from 'crypto';
+import { verifyPaystackSignature } from './paystack-signature';
 
 @Controller('paystack')
 export class PaystackWebhookController {
@@ -15,36 +16,35 @@ export class PaystackWebhookController {
 
   @Post('webhook')
   async handleWebhook(@Req() req, @Body() body: any, @Res() res) {
-    const signature = req.headers['x-paystack-signature'];
-
-    // Crypto validation: ensures the payload came genuinely from Paystack
-    const hash = crypto
-      .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY || '')
-      .update(JSON.stringify(body))
-      .digest('hex');
-
-    // timingSafeEqual requires equal-length buffers, and throws otherwise —
-    // guard that first so a malformed/missing signature header can't crash
-    // the request or leak length information via a thrown error.
-    const hashBuffer = Buffer.from(hash, 'utf8');
-    const signatureBuffer = Buffer.from(String(signature || ''), 'utf8');
-    const signatureMatches =
-      hashBuffer.length === signatureBuffer.length &&
-      crypto.timingSafeEqual(hashBuffer, signatureBuffer);
-
-    if (!signatureMatches) {
-      throw new BadRequestException(
-        'Invalid transaction signature signature token.',
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      throw new ServiceUnavailableException(
+        'Paystack webhook verification is not configured.',
       );
     }
 
-    // Process only successful events
+    // Verify the original bytes Paystack signed. Re-serializing parsed JSON
+    // can change whitespace/escaping and is not a valid signature input.
+    const rawBody: unknown = req.rawBody;
+    if (!Buffer.isBuffer(rawBody)) {
+      throw new BadRequestException('Raw webhook payload is unavailable.');
+    }
+
+    const signature = req.headers['x-paystack-signature'];
+    if (!verifyPaystackSignature(rawBody, signature, secret)) {
+      throw new BadRequestException('Invalid Paystack webhook signature.');
+    }
+
+    // Process only successful events. The transaction handler must remain
+    // idempotent because payment providers retry webhook delivery.
     if (body.event === 'charge.success') {
-      const { reference } = body.data;
+      const reference = body.data?.reference;
+      if (typeof reference !== 'string' || reference.length === 0) {
+        throw new BadRequestException('Paystack charge reference is missing.');
+      }
       await this.transactionsService.handlePaystackWebhook(reference);
     }
 
-    // Always respond with a 200 OK to tell Paystack you processed the packet successfully
     return res.status(200).send('Event Acknowledged');
   }
 }
