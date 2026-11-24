@@ -171,7 +171,7 @@ export class VtpassPaymentsService {
         existing.providerVariationCode !== (variationCode || null) ||
         existing.customerIdentifier !== maskedIdentifier ||
         existing.customerIdentifierHash !== customerIdentifierHash ||
-        (dto.amount !== undefined && Math.abs(Number(existing.amount) - Number(dto.amount)) > 0.001)
+        Math.abs(Number(existing.amount) - Number(dto.amount)) > 0.001
       ) {
         throw new BadRequestException('This idempotency key was already used for a different bill purchase.');
       }
