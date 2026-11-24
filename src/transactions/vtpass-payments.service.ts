@@ -140,8 +140,7 @@ export class VtpassPaymentsService {
       reserved = await this.prisma.$transaction(async (tx) => {
         const user = await tx.user.findUnique({
           where: { id: userId },
-          include: { wallet: true },
-        });
+          });
         if (!user) throw new NotFoundException('User not found.');
         if (user.isFrozen) {
           throw new ForbiddenException('Your account is currently restricted. Please contact support.');
@@ -216,7 +215,7 @@ export class VtpassPaymentsService {
         phone: dto.phone || reserved.user.phone,
         ...(dto.customerType ? { type: dto.customerType } : {}),
       });
-    } catch (error: any) {
+    } catch {
       this.logger.warn(`VTpass purchase outcome uncertain for ${requestId}; transaction left pending for requery.`);
       await this.prisma.transaction.updateMany({ where: { id: reserved.transaction.id, status: 'pending' }, data: { providerStatus: 'purchase_response_unknown', providerLastCheckedAt: new Date() } });
       const current = await this.prisma.transaction.findUnique({
@@ -356,7 +355,7 @@ export class VtpassPaymentsService {
       try {
         const response = await this.vtpass.requery(transaction.providerRequestId!);
         await this.applyProviderOutcome(transaction.id, response);
-      } catch (error: any) {
+      } catch {
         this.logger.warn(`VTpass requery failed for transaction ${transaction.id}; it remains pending.`);
         await this.prisma.transaction.updateMany({ where: { id: transaction.id, status: 'pending' }, data: { providerStatus: 'requery_unavailable', providerLastCheckedAt: new Date() } });
       }
