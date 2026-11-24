@@ -517,13 +517,14 @@ export class TransactionsService {
           throw new BadRequestException('This payment attempt key is already associated with another request.');
         }
         if (existing.status === 'completed') {
-          return { success: true, status: 'completed', reference: existing.reference, replayed: true };
+          return { success: true, status: 'completed', reference: existing.reference, amount: Number(existing.amount), replayed: true };
         }
         if (existing.status === 'pending') {
           return {
             success: false,
             status: 'pending',
             reference: existing.reference,
+            amount: Number(existing.amount),
             message: 'This payment attempt is already being processed. Check its status before starting another payment.',
             replayed: true,
           };
@@ -559,6 +560,7 @@ export class TransactionsService {
             success: existing.status === 'completed',
             status: existing.status,
             reference: existing.reference,
+            amount: Number(existing.amount),
             replayed: true,
           };
         }
@@ -597,6 +599,7 @@ export class TransactionsService {
         success: false,
         status: 'pending',
         reference,
+        amount,
         message: 'Payment setup is taking longer than expected. Check this reference before trying again.',
       };
     }
@@ -612,6 +615,7 @@ export class TransactionsService {
     return {
       success: true,
       status: 'initialized',
+      amount,
       transactionId: txn.id,
       authorizationUrl: resData.data.authorization_url,
       reference,
