@@ -1021,11 +1021,16 @@ export class TransactionsService {
       'transaction' in result &&
       result.transaction
     ) {
-      await this.runFraudCheck(result.transaction);
-      await this.analyticsService.track(ANALYTICS_EVENTS.WALLET_FUNDED, {
+      // The wallet credit and journal are already committed atomically.
+      // Do not hold Paystack's webhook acknowledgement open for ancillary
+      // fraud/analytics work; failures are logged and can be reconciled.
+      void this.runFraudCheck(result.transaction).catch((error) =>
+        console.error('Post-funding fraud check failed:', error),
+      );
+      void this.analyticsService.track(ANALYTICS_EVENTS.WALLET_FUNDED, {
         userId: result.transaction.userId,
         properties: { amount: Number(result.transaction.amount) },
-      });
+      }).catch((error) => console.error('Wallet-funded analytics failed:', error));
     }
 
     return {
