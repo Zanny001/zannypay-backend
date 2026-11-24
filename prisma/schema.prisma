@@ -245,6 +245,7 @@ model User {
   id            String        @id @default(uuid())
   name          String
   email         String        @unique
+  emailVerified Boolean       @default(false)
   phone         String        @unique
   pin           String
   accountNumber String        @unique
