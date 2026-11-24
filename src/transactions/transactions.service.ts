@@ -209,10 +209,16 @@ export class TransactionsService {
 
         if (recipient) {
           // --- INTERNAL TRANSFER ---
-          await tx.wallet.update({
-            where: { userId: sender.id },
+          // Re-check funds in the UPDATE predicate itself. The earlier
+          // balance read is only for a friendly error; it is not a concurrency
+          // control because two requests can read the same available balance.
+          const debit = await tx.wallet.updateMany({
+            where: { userId: sender.id, balance: { gte: amount } },
             data: { balance: { decrement: amount } },
           });
+          if (debit.count !== 1) {
+            throw new BadRequestException('Insufficient funds.');
+          }
           await tx.wallet.update({
             where: { userId: recipient.id },
             data: { balance: { increment: amount } },
