@@ -482,6 +482,7 @@ model Transaction {
   ledgerEntries LedgerEntry[] // the balanced journal(s) that actually moved money for this transaction — see LedgerService
 
   @@index([userId, createdAt]) // hot path for the fraud engine's per-user velocity window scans
+  @@index([category, status, providerLastCheckedAt, createdAt]) // pending biller reconciliation
 }
 
 model SavingsGoal {
