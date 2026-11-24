@@ -43,6 +43,8 @@ describe('VtpassPaymentsService', () => {
   it.each([
     { code: '099' },
     { code: '000', content: { transactions: { status: 'pending' } } },
+    { code: '000', content: { transactions: { status: 'failed' } } },
+    { code: '000', content: { transactions: { status: 'reversed' } } },
     { code: '083' },
     { code: '014' },
   ])('keeps uncertain provider responses pending: %o', (payload) => {
