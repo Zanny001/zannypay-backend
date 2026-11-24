@@ -12,9 +12,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm test -- --runInBand
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
       - run: npm run build
       - run: npm run lint
