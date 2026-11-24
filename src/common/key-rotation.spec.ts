@@ -41,7 +41,7 @@ describe('encryption key rotation', () => {
     };
     const report = await rotateTarget(target, oldKey, newKey, { apply: false });
     expect(report.rotated).toBe(1);
-    expect(target.replaceIfUnchanged).not.toHaveBeenCalled();
+    expect(target.replaceIfUnchanged.bind(target)).not.toHaveBeenCalled();
   });
 
   it('stops when a target repeats a page', async () => {
@@ -52,7 +52,7 @@ describe('encryption key rotation', () => {
     };
     await expect(rotateTarget(target, oldKey, newKey, { apply: false }))
       .rejects.toThrow('did not advance its pagination cursor');
-    expect(target.fetchBatch).toHaveBeenCalledTimes(2);
+    expect(target.fetchBatch.bind(target)).toHaveBeenCalledTimes(2);
   });
 
   it('rejects unsafe batch sizes', async () => {
@@ -63,6 +63,6 @@ describe('encryption key rotation', () => {
     };
     await expect(rotateTarget(target, oldKey, newKey, { apply: false, batchSize: 0 }))
       .rejects.toThrow('batchSize must be an integer');
-    expect(target.fetchBatch).not.toHaveBeenCalled();
+    expect(target.fetchBatch.bind(target)).not.toHaveBeenCalled();
   });
 });
