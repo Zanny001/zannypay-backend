@@ -394,7 +394,7 @@ export class VtpassPaymentsService {
         transaction.providerLastCheckedAt.getTime() < Date.now() - 30_000);
     if (shouldRequery) {
       try {
-        const response = await this.vtpass.requery(transaction.providerRequestId!);
+        const response = await this.vtpass.requery(transaction.providerRequestId);
         await this.applyProviderOutcome(transaction.id, response);
       } catch {
         await this.prisma.transaction.updateMany({
