@@ -16,7 +16,7 @@ export interface KycVerificationProvider {
 export class MockKycVerificationProvider implements KycVerificationProvider {
   readonly name = 'mock';
 
-  async checkLiveness(_selfieUrl: string): Promise<LivenessResult> {
+  async checkLiveness(): Promise<LivenessResult> {
     // Never turn a synthetic "pass" into a real customer's KYC approval.
     if (process.env.NODE_ENV === 'production') {
       throw new ServiceUnavailableException(
