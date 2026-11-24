@@ -194,6 +194,9 @@ export class VtpassPaymentsService {
           where: { id: userId },
           });
         if (!user) throw new NotFoundException('User not found.');
+        if (!dto.phone && !user.phone) {
+          throw new BadRequestException('Add a valid phone number before purchasing this service.');
+        }
         if (user.isFrozen) {
           throw new ForbiddenException('Your account is currently restricted. Please contact support.');
         }
