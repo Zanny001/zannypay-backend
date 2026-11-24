@@ -470,7 +470,8 @@ model Transaction {
   // before the provider call so an uncertain outcome can only be requeried.
   providerRequestId String? @unique
   providerTransactionId String?
-  providerStatus String?\n  providerLastCheckedAt DateTime?
+  providerStatus String?
+  providerLastCheckedAt DateTime?
   providerServiceId String?
   providerVariationCode String?
   customerIdentifier String?
