@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
 import * as bcrypt from 'bcrypt';
 import { TransactionsService } from './transactions.service';
@@ -200,6 +200,23 @@ describe('TransactionsService.transferFunds — business account routing', () =>
       (c: any) => c[0].data.type === 'credit',
     );
     expect(creditCall[0].data.receivedVia).toBe('personal');
+  });
+
+  it('rejects external bank transfers before wallet debit while no payout provider is configured', async () => {
+    tx.user.findUnique.mockResolvedValue({ ...sender });
+    tx.user.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.transferFunds('sender-1', {
+        recipientAccount: '0123456789',
+        amount: 1000,
+        pin: '1234',
+        bank: 'Example Bank',
+      } as any),
+    ).rejects.toThrow(ServiceUnavailableException);
+
+    expect(tx.wallet.updateMany).not.toHaveBeenCalled();
+    expect(tx.transaction.create).not.toHaveBeenCalled();
   });
 
   it('rejects a concurrent spend when the conditional wallet debit updates no row', async () => {
