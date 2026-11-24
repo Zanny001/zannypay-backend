@@ -86,7 +86,7 @@ export class OtpService {
     const code = crypto.randomInt(0, 1000000).toString().padStart(6, '0');
     const codeHash = await bcrypt.hash(code, 10);
 
-    await this.prisma.otpCode.create({
+    const record = await this.prisma.otpCode.create({
       data: {
         target,
         purpose,
