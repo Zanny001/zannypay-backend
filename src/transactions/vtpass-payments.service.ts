@@ -50,6 +50,7 @@ export class VtpassPaymentsService {
   private variationList(payload: any): any[] {
     const list =
       payload?.content?.variations ??
+      payload?.content?.varations ??
       payload?.content?.data?.variations ??
       payload?.data?.variations ??
       payload?.content;
