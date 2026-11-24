@@ -316,15 +316,11 @@ export class TransactionsService {
             senderName: sender.name,
           };
         } else {
-          if (!this.hasExternalPayoutProvider()) {
-            // Reject before touching the wallet: a clearing-account journal
-            // is not proof that an external bank received the funds.
-            throw new ServiceUnavailableException(
-              'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
-            );
-          }
-
-
+          // Reject before touching the wallet: a clearing-account journal
+          // is not proof that an external bank received the funds.
+          throw new ServiceUnavailableException(
+            'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
+          );
         }
       });
     } catch (error) {
