@@ -6,7 +6,9 @@ import { VtpassPaymentsService } from './vtpass-payments.service';
 
 describe('VtpassPaymentsService', () => {
   let service: VtpassPaymentsService;
-  let vtpass: { getServiceVariations: jest.Mock; verifyCustomer: jest.Mock; assertPurchaseConfigured: jest.Mock; createRequestId: jest.Mock; purchase: jest.Mock; requery: jest.Mock };\n  let prisma: any;\n  let ledger: any;
+  let vtpass: { getServiceVariations: jest.Mock; verifyCustomer: jest.Mock; assertPurchaseConfigured: jest.Mock; createRequestId: jest.Mock; purchase: jest.Mock; requery: jest.Mock };
+  let prisma: any;
+  let ledger: any;
 
   beforeEach(() => {
     vtpass = {
