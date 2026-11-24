@@ -90,6 +90,10 @@ describe('TransactionsService.payBill — points redemption wiring', () => {
       ],
     }).compile();
     service = module.get<TransactionsService>(TransactionsService);
+    // These tests exercise the bill-payment accounting once a provider has
+    // been supplied. Separate fail-closed tests cover the default no-provider
+    // production behavior.
+    (service as any).hasBillerProvider = () => true;
     (bcrypt.compare as jest.Mock).mockResolvedValue(true);
   });
 
