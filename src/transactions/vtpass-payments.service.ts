@@ -80,6 +80,11 @@ export class VtpassPaymentsService {
       throw new BadRequestException('VTpass has not published safe amount limits for this product.');
     }
 
+    const productType = String(service.product_type || '').toLowerCase();
+    if (!variationCode && (this.requiresMerchantVerification(serviceID) || productType === 'variation')) {
+      throw new BadRequestException('Select a product variation before continuing.');
+    }
+
     let variation: any = null;
     if (variationCode) {
       const response = await this.vtpass.getServiceVariations(serviceID);
