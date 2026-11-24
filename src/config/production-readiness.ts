@@ -36,6 +36,6 @@ export function assertProductionReadiness(env: Env = process.env): void {
   const errors = productionReadinessErrors(env);
   if (errors.length) {
     throw new Error(
-      \`Refusing production startup: \${errors.length} production-readiness blocker(s):\n- \${errors.join('\n- ')}\`,
-    );  }
+      `Refusing production startup: ${errors.length} production-readiness blocker(s):\n- ${errors.join('\n- ')}`,
+    ); }
 }
