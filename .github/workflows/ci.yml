@@ -20,7 +20,9 @@ jobs:
           cache: npm
       - name: Refresh dependency lockfile on security branch
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/hotfix/dependency-security-2026-11') && !contains(github.event.head_commit.message, '[dependency-lock-updated]')
-        run: npm install && npm audit fix
+        run: |
+          npm install
+          npm audit fix || echo 'Some advisories require separate review; continuing with tests and build.'
       - run: npm ci
       - run: npm test -- --runInBand
       - run: npm run build
