@@ -159,7 +159,7 @@ export class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
         text: `Your ZannyPay ${purpose.toLowerCase().replace(/_/g, ' ')} code is ${code}. It expires in 10 minutes. If you did not request this, ignore this email.`,
         html: `<p>Your ZannyPay verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>This code expires in 10 minutes. If you did not request it, ignore this email.</p>`,
       });
-    } catch (error) {
+    } catch {
       this.logger.error('SMTP email delivery failed');
       throw new ServiceUnavailableException(
         'Email delivery is temporarily unavailable. Please try again later.',
