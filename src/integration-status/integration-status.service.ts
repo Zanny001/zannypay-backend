@@ -80,6 +80,11 @@ export class IntegrationStatusService {
           'No approved lender, funded facility, underwriting rules or disbursement adapter is integrated.',
           true,
         ),
+        savingsInterest: status(
+          false,
+          'Production savings interest is paused until a contracted, funded yield source and required approvals are in place.',
+          true,
+        ),
       },
     };
   }
