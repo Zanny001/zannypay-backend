@@ -143,6 +143,7 @@ export class TransactionsController {
       ? `zannypay://payment-complete?reference=${encodeURIComponent(reference)}`
       : 'zannypay://payment-complete';
     const safeReturnUrl = appReturnUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const scriptReturnUrl = JSON.stringify(appReturnUrl);
     const html = `
       <!DOCTYPE html>
       <html lang="en">
