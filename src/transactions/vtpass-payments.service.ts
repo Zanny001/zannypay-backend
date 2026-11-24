@@ -357,7 +357,8 @@ export class VtpassPaymentsService {
         const response = await this.vtpass.requery(transaction.providerRequestId!);
         await this.applyProviderOutcome(transaction.id, response);
       } catch (error: any) {
-        this.logger.warn(`VTpass requery failed for transaction ${transaction.id}; it remains pending.`);\n        await this.prisma.transaction.updateMany({ where: { id: transaction.id, status: 'pending' }, data: { providerStatus: 'requery_unavailable', providerLastCheckedAt: new Date() } });
+        this.logger.warn(`VTpass requery failed for transaction ${transaction.id}; it remains pending.`);
+        await this.prisma.transaction.updateMany({ where: { id: transaction.id, status: 'pending' }, data: { providerStatus: 'requery_unavailable', providerLastCheckedAt: new Date() } });
       }
     }
   }
