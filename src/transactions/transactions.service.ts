@@ -373,6 +373,88 @@ export class TransactionsService {
     return { success: true, transactionId: result.transactionId };
   }
 
+  private paystackAuthHeaders() {
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      throw new ServiceUnavailableException(
+        'Bank account verification is not configured.',
+      );
+    }
+    return { Authorization: `Bearer ${secret}` };
+  }
+
+  async listPaystackBanks() {
+    let response: Response;
+    let payload: any;
+    try {
+      response = await fetch('https://api.paystack.co/bank?currency=NGN', {
+        headers: this.paystackAuthHeaders(),
+      });
+      payload = await response.json();
+    } catch {
+      throw new ServiceUnavailableException(
+        'Could not reach the bank directory. Please try again.',
+      );
+    }
+    if (!response.ok || !payload?.status || !Array.isArray(payload.data)) {
+      throw new ServiceUnavailableException(
+        'The bank directory is temporarily unavailable.',
+      );
+    }
+    return {
+      banks: payload.data
+        .filter((bank: any) => bank?.active && bank?.code && bank?.name)
+        .map((bank: any) => ({
+          name: String(bank.name),
+          code: String(bank.code),
+        })),
+    };
+  }
+
+  async resolvePaystackBankAccount(accountNumber: string, bankCode: string) {
+    const account = String(accountNumber || '').trim();
+    const code = String(bankCode || '').trim();
+    if (!/^\d{10}$/.test(account)) {
+      throw new BadRequestException('Enter a valid 10-digit bank account number.');
+    }
+    if (!/^\d{2,8}$/.test(code)) {
+      throw new BadRequestException('Select a valid destination bank.');
+    }
+
+    let response: Response;
+    let payload: any;
+    try {
+      const url = new URL('https://api.paystack.co/bank/resolve');
+      url.searchParams.set('account_number', account);
+      url.searchParams.set('bank_code', code);
+      response = await fetch(url.toString(), {
+        headers: this.paystackAuthHeaders(),
+      });
+      payload = await response.json();
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof ServiceUnavailableException) {
+        throw error;
+      }
+      throw new ServiceUnavailableException(
+        'Could not verify this bank account right now. Please try again.',
+      );
+    }
+
+    if (!response.ok || !payload?.status || !payload?.data?.account_name) {
+      throw new BadRequestException(
+        payload?.message || 'We could not verify this account at the selected bank.',
+      );
+    }
+
+    return {
+      accountNumber: String(payload.data.account_number || account),
+      accountName: String(payload.data.account_name).trim(),
+      bankCode: code,
+      bankName: String(payload.data.bank_name || ''),
+      verified: true,
+    };
+  }
+
   async fundWallet(userId: string, fundDto: FundDto) {
     const { amount } = fundDto;
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
