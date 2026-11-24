@@ -27,6 +27,7 @@ describe('IntegrationStatusService', () => {
     expect(result.integrations.virtualCardIssuing.status).toBe(
       'not_integrated',
     );
+    expect(result.integrations.savingsInterest.status).toBe('not_integrated');
   });
 
   it('reports credential presence without claiming live transaction readiness', () => {
