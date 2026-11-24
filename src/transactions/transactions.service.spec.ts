@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -40,5 +41,17 @@ describe('TransactionsService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('rejects bill payments before any wallet mutation when no biller adapter exists', async () => {
+    await expect(service.payBill('user-1', {} as any)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
+
+  it('rejects airtime/data purchases before any wallet mutation without a provider', async () => {
+    await expect(
+      service.buyAirtime('user-1', {} as any),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });
