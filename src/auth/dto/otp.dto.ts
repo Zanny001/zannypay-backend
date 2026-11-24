@@ -18,7 +18,11 @@ export class VerifyOtpDto {
   @IsString()
   target: string;
 
-  @IsIn([OTP_PURPOSES.SIGNUP_VERIFICATION, OTP_PURPOSES.PIN_RESET])
+  @IsIn([
+    OTP_PURPOSES.SIGNUP_VERIFICATION,
+    OTP_PURPOSES.PIN_RESET,
+    OTP_PURPOSES.EMAIL_VERIFICATION,
+  ])
   purpose: OtpPurpose;
 
   @IsString()
