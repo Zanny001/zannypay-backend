@@ -14,15 +14,22 @@ export class VtpassClient {
   private readonly logger = new Logger(VtpassClient.name);
   private readonly baseUrl = 'https://sandbox.vtpass.com/api';
 
-  private credentials() {
+  private credentials(method: 'GET' | 'POST') {
     const { VTPASS_API_KEY, VTPASS_PUBLIC_KEY, VTPASS_SECRET_KEY } =
       process.env;
-    if (!VTPASS_API_KEY || !VTPASS_PUBLIC_KEY || !VTPASS_SECRET_KEY) {
+    const missingGetCredentials = !VTPASS_API_KEY || !VTPASS_PUBLIC_KEY;
+    const missingPostCredentials =
+      !VTPASS_API_KEY || !VTPASS_SECRET_KEY;
+    if (method === 'GET' ? missingGetCredentials : missingPostCredentials) {
       throw new ServiceUnavailableException(
-        'VTpass sandbox credentials are not fully configured.',
+        'VTpass sandbox credentials for this request are not fully configured.',
       );
     }
-    return { apiKey: VTPASS_API_KEY, publicKey: VTPASS_PUBLIC_KEY, secretKey: VTPASS_SECRET_KEY };
+    return {
+      apiKey: VTPASS_API_KEY!,
+      publicKey: VTPASS_PUBLIC_KEY,
+      secretKey: VTPASS_SECRET_KEY,
+    };
   }
 
   private async request(
@@ -30,7 +37,7 @@ export class VtpassClient {
     method: 'GET' | 'POST',
     payload?: VtpassPayload,
   ): Promise<VtpassResponse> {
-    const credentials = this.credentials();
+    const credentials = this.credentials(method);
     const headers: Record<string, string> = {
       Accept: 'application/json',
       'Content-Type': 'application/json',
@@ -70,8 +77,14 @@ export class VtpassClient {
     }
   }
 
-  getServiceCategories() {
-    return this.request('service-categories', 'GET');
+  getServices(identifier: string) {
+    if (!/^[a-z][a-z0-9-]{1,30}$/i.test(identifier)) {
+      throw new ServiceUnavailableException('Invalid VTpass service category.');
+    }
+    return this.request(
+      `services?identifier=${encodeURIComponent(identifier)}`,
+      'GET',
+    );
   }
 
   getServiceVariations(serviceId: string) {
