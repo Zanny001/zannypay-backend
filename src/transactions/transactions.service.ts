@@ -418,10 +418,10 @@ export class TransactionsService {
   async resolvePaystackBankAccount(accountNumber: string, bankCode: string) {
     const account = String(accountNumber || '').trim();
     const code = String(bankCode || '').trim();
-    if (!/^\\d{10}$/.test(account)) {
+    if (!/^\d{10}$/.test(account)) {
       throw new BadRequestException('Enter a valid 10-digit bank account number.');
     }
-    if (!/^\\d{2,8}$/.test(code)) {
+    if (!/^\d{2,8}$/.test(code)) {
       throw new BadRequestException('Select a valid destination bank.');
     }
 
