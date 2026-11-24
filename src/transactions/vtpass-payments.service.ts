@@ -331,7 +331,32 @@ export class VtpassPaymentsService {
       where: { id: transactionId, userId, providerRequestId: { not: null } },
     });
     if (!transaction) throw new NotFoundException('Bill transaction not found.');
-    return this.receipt(transaction);
+
+    // A customer opening a pending receipt can request a fresh status check.
+    // Rate-limit this per transaction using the same checkpoint as the cron
+    // worker; requery is read-only and never sends a second purchase.
+    const shouldRequery =
+      transaction.status === 'pending' &&
+      (!transaction.providerLastCheckedAt ||
+        transaction.providerLastCheckedAt.getTime() < Date.now() - 30_000);
+    if (shouldRequery) {
+      try {
+        const response = await this.vtpass.requery(transaction.providerRequestId!);
+        await this.applyProviderOutcome(transaction.id, response);
+      } catch {
+        await this.prisma.transaction.updateMany({
+          where: { id: transaction.id, status: 'pending' },
+          data: {
+            providerStatus: 'requery_unavailable',
+            providerLastCheckedAt: new Date(),
+          },
+        });
+      }
+    }
+    const current = await this.prisma.transaction.findUnique({
+      where: { id: transaction.id },
+    });
+    return this.receipt(current);
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
