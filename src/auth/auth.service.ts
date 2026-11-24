@@ -228,15 +228,20 @@ export class AuthService {
       }
     }
 
-    return this.otpService.requestCode(dto.target, dto.purpose);
+    const target = isEmailPurpose ? dto.target.toLowerCase() : dto.target;
+    return this.otpService.requestCode(target, dto.purpose);
   }
 
   async verifyOtp(dto: VerifyOtpDto) {
-    await this.otpService.verifyCode(dto.target, dto.purpose, dto.code);
+    const target =
+      dto.purpose === OTP_PURPOSES.EMAIL_VERIFICATION
+        ? dto.target.toLowerCase()
+        : dto.target;
+    await this.otpService.verifyCode(target, dto.purpose, dto.code);
 
     if (dto.purpose === OTP_PURPOSES.EMAIL_VERIFICATION) {
       const user = await this.prisma.user.findUnique({
-        where: { email: dto.target.toLowerCase() },
+        where: { email: target },
       });
       if (!user) throw new NotFoundException('Email address not found.');
       await this.prisma.user.update({
