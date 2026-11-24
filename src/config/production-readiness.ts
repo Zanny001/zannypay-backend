@@ -12,6 +12,7 @@ export function productionReadinessErrors(env: Env = process.env): string[] {
   errors.push('KYC verification is wired to a mock provider; integrate and contract a real provider before production.');
   errors.push('Sanctions/PEP screening is wired to a mock provider; integrate and contract a real provider before production.');
   errors.push('Card issuing is wired to a mock provider; integrate a licensed issuer before production.');
+  errors.push('External bank payouts, bill payments and airtime/data fulfilment are not connected to verified production rails; implement provider acceptance, asynchronous status transitions, reversals and settlement reconciliation before production.');
 
   if (env.REQUIRE_SIGNUP_OTP !== 'true') {
     errors.push('REQUIRE_SIGNUP_OTP must be true in production.');
