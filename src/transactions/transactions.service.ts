@@ -162,7 +162,6 @@ export class TransactionsService {
       pin,
       bank,
       note,
-      recipientName,
       idempotencyKey,
     } = transferDto;
 
