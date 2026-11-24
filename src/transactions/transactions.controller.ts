@@ -7,6 +7,7 @@ import {
   Req,
   Res,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { TransactionsService } from './transactions.service';
@@ -20,6 +21,24 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 @Controller('wallet')
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Get('banks')
+  async listBanks() {
+    return this.transactionsService.listPaystackBanks();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('resolve-bank-account')
+  async resolveBankAccount(
+    @Query('accountNumber') accountNumber: string,
+    @Query('bankCode') bankCode: string,
+  ) {
+    return this.transactionsService.resolvePaystackBankAccount(
+      accountNumber,
+      bankCode,
+    );
+  }
 
   @UseGuards(JwtAuthGuard)
   @Post('transfer')

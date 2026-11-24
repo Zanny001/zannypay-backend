@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   ForbiddenException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '@nestjs-modules/mailer';
@@ -22,9 +23,20 @@ import {
 } from '../analytics/analytics.service';
 import { formatNaira } from '../common/format-currency.util';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class TransactionsService {
+  // No production biller or airtime/data adapter is wired in this release.
+  // Keep these paths disabled until a provider can confirm fulfilment.
+  private hasBillerProvider(): boolean {
+    return false;
+  }
+
+  private hasAirtimeProvider(): boolean {
+    return false;
+  }
+
   // Reward points → naira conversion for bill/airtime purchases. Kept as a
   // single constant here rather than DB-configurable for now — it's a
   // conservative, low-stakes rate (a maximally engaged daily-check-in user
@@ -151,9 +163,17 @@ export class TransactionsService {
       pin,
       bank,
       note,
-      recipientName,
       idempotencyKey,
     } = transferDto;
+
+    // Never allow an explicitly selected external bank to fall through to
+    // the internal ZannyPay account lookup. The production main branch does
+    // not yet have a verified outgoing payout adapter.
+    if (bank && bank !== 'ZannyPay') {
+      throw new ServiceUnavailableException(
+        'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
+      );
+    }
 
     const existing = await this.findExistingByIdempotencyKey(
       userId,
@@ -205,10 +225,16 @@ export class TransactionsService {
 
         if (recipient) {
           // --- INTERNAL TRANSFER ---
-          await tx.wallet.update({
-            where: { userId: sender.id },
+          // Enforce sufficient funds in the UPDATE predicate itself;
+          // the earlier balance read is only a friendly pre-check and cannot
+          // prevent two concurrent transfers from spending the same funds.
+          const debit = await tx.wallet.updateMany({
+            where: { userId: sender.id, balance: { gte: amount } },
             data: { balance: { decrement: amount } },
           });
+          if (debit.count !== 1) {
+            throw new BadRequestException('Insufficient funds.');
+          }
           await tx.wallet.update({
             where: { userId: recipient.id },
             data: { balance: { increment: amount } },
@@ -311,80 +337,9 @@ export class TransactionsService {
             senderName: sender.name,
           };
         } else {
-          // --- EXTERNAL TRANSFER ---
-          await tx.wallet.update({
-            where: { userId: sender.id },
-            data: { balance: { decrement: amount } },
-          });
-
-          const senderTx = await tx.transaction.create({
-            data: {
-              userId: sender.id,
-              type: 'debit',
-              category: 'transfer',
-              title: `Transfer to ${recipientName || recipientAccount}`,
-              subtitle: bank || 'External Bank',
-              amount,
-              bank,
-              status: 'completed',
-              reference: `TXN-${Date.now()}-EXT`,
-              recipientAccount,
-              idempotencyKey,
-            },
-          });
-
-          // The other side of this journal is a system clearing account,
-          // not a second customer — the actual payout to the external bank
-          // happens through a real payment rail this codebase doesn't
-          // integrate with yet (see the mock-integration notes elsewhere in
-          // this file); this clearing account is where that integration
-          // would settle against once it exists.
-          const senderWalletAccountExt =
-            await this.ledgerService.getOrCreateCustomerAccount(
-              LedgerAccountType.CUSTOMER_WALLET,
-              sender.id,
-              tx,
-            );
-          const externalClearingAccount =
-            await this.ledgerService.getOrCreateSystemAccount(
-              LedgerAccountType.SYSTEM_EXTERNAL_PAYOUT_CLEARING,
-              tx,
-            );
-          await this.ledgerService.postJournal(
-            tx,
-            [
-              {
-                accountId: senderWalletAccountExt.id,
-                direction: LedgerDirection.DEBIT,
-                amount,
-              },
-              {
-                accountId: externalClearingAccount.id,
-                direction: LedgerDirection.CREDIT,
-                amount,
-              },
-            ],
-            {
-              transactionId: senderTx.id,
-              memo: `External transfer to ${recipientAccount}`,
-            },
+          throw new ServiceUnavailableException(
+            'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
           );
-
-          this.mailerService
-            .sendMail({
-              to: sender.email,
-              subject: 'Debit Alert: External Transfer 💸',
-              html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Transfer Processing</h2><p>You sent <strong>NGN ${amount}</strong> to account ${recipientAccount} at ${bank || 'an external bank'}.</p><p>Reference: ${senderTx.reference}</p></div>`,
-            })
-            .catch(console.error);
-
-          return {
-            success: true,
-            transactionId: senderTx.id,
-            senderTx,
-            isInternal: false,
-            recipientName: recipientName || recipientAccount,
-          };
         }
       });
     } catch (error) {
@@ -438,65 +393,189 @@ export class TransactionsService {
     return { success: true, transactionId: result.transactionId };
   }
 
+  private paystackAuthHeaders() {
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      throw new ServiceUnavailableException(
+        'Bank account verification is not configured.',
+      );
+    }
+    return { Authorization: `Bearer ${secret}` };
+  }
+
+  async listPaystackBanks() {
+    let response: Response;
+    let payload: any;
+    try {
+      response = await fetch('https://api.paystack.co/bank?currency=NGN&perPage=100', {
+        headers: this.paystackAuthHeaders(),
+      });
+      payload = await response.json();
+    } catch {
+      throw new ServiceUnavailableException(
+        'Could not reach the bank directory. Please try again.',
+      );
+    }
+    if (!response.ok || !payload?.status || !Array.isArray(payload.data)) {
+      throw new ServiceUnavailableException(
+        'The bank directory is temporarily unavailable.',
+      );
+    }
+    return {
+      banks: payload.data
+        .filter((bank: any) => bank?.active && bank?.code && bank?.name)
+        .map((bank: any) => ({
+          name: String(bank.name),
+          code: String(bank.code),
+        })),
+    };
+  }
+
+  async resolvePaystackBankAccount(accountNumber: string, bankCode: string) {
+    const account = String(accountNumber || '').trim();
+    const code = String(bankCode || '').trim();
+    if (!/^\d{10}$/.test(account)) {
+      throw new BadRequestException('Enter a valid 10-digit bank account number.');
+    }
+    if (!/^\d{2,8}$/.test(code)) {
+      throw new BadRequestException('Select a valid destination bank.');
+    }
+
+    let response: Response;
+    let payload: any;
+    try {
+      const url = new URL('https://api.paystack.co/bank/resolve');
+      url.searchParams.set('account_number', account);
+      url.searchParams.set('bank_code', code);
+      response = await fetch(url.toString(), {
+        headers: this.paystackAuthHeaders(),
+      });
+      payload = await response.json();
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof ServiceUnavailableException) {
+        throw error;
+      }
+      throw new ServiceUnavailableException(
+        'Could not verify this bank account right now. Please try again.',
+      );
+    }
+
+    if (!response.ok || !payload?.status || !payload?.data?.account_name) {
+      throw new BadRequestException(
+        payload?.message || 'We could not verify this account at the selected bank.',
+      );
+    }
+
+    return {
+      accountNumber: String(payload.data.account_number || account),
+      accountName: String(payload.data.account_name).trim(),
+      bankCode: code,
+      bankName: String(payload.data.bank_name || ''),
+      verified: true,
+    };
+  }
+
   async fundWallet(userId: string, fundDto: FundDto) {
-    const { amount } = fundDto;
+    const amount = Number(fundDto.amount);
+    const amountInKobo = Math.round(amount * 100);
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !Number.isSafeInteger(amountInKobo) ||
+      Math.abs(amountInKobo / 100 - amount) > 0.000001
+    ) {
+      throw new BadRequestException('Enter a valid funding amount with up to two decimal places.');
+    }
+
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      throw new ServiceUnavailableException(
+        'Wallet funding is temporarily unavailable because Paystack is not configured.',
+      );
+    }
+
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found.');
-    if (user.isFrozen)
+    if (user.isFrozen) {
       throw new ForbiddenException(
         'Your account is currently restricted. Please contact support.',
       );
+    }
 
-    const reference = `FND-${Date.now()}`;
+    // Persist the pending transaction before contacting Paystack. A very
+    // fast webhook can then always find the reference it needs to credit.
+    const reference = `FND-${randomUUID()}`;
+    const txn = await this.prisma.transaction.create({
+      data: {
+        userId,
+        type: 'credit',
+        category: 'funding',
+        title: 'Wallet Top-up',
+        subtitle: 'Paystack Checkout',
+        amount,
+        status: 'pending',
+        reference,
+      },
+    });
+
+    const backendUrl = (
+      process.env.BACKEND_URL || 'https://zannypay-backend.onrender.com'
+    ).replace(/\/+$/, '');
+    const callbackUrl = `${backendUrl}/api/v1/wallet/payment-success`;
+
+    let paystackResponse: Response;
+    let resData: any;
     try {
-      const paystackResponse = await fetch(
+      paystackResponse = await fetch(
         'https://api.paystack.co/transaction/initialize',
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+            Authorization: `Bearer ${secret}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             email: user.email,
-            amount: Math.round(amount * 100),
+            amount: amountInKobo,
+            currency: 'NGN',
             reference,
-            callback_url: `${process.env.BACKEND_URL || 'http://localhost:4000'}/wallet/payment-success`,
+            callback_url: callbackUrl,
           }),
         },
       );
-
-      const resData = await paystackResponse.json();
-      if (!paystackResponse.ok || !resData.status)
-        throw new BadRequestException(resData.message);
-
-      const txn = await this.prisma.transaction.create({
-        data: {
-          userId,
-          type: 'credit',
-          category: 'funding',
-          title: 'Wallet Top-up',
-          subtitle: 'Paystack Checkout',
-          amount,
-          status: 'pending',
-          reference,
-        },
-      });
-
-      return {
-        success: true,
-        transactionId: txn.id,
-        authorizationUrl: resData.data.authorization_url,
-        reference,
-      };
-    } catch (error) {
-      throw new BadRequestException(
-        error.message || 'Payment gateway unavailable.',
+      resData = await paystackResponse.json();
+    } catch {
+      // The request may have reached Paystack even if the response was lost.
+      // Keep the record pending so webhook/verify reconciliation can settle it.
+      throw new ServiceUnavailableException(
+        `Paystack did not confirm the checkout initialization. Keep reference ${reference} and check its status before retrying.`,
       );
     }
+
+    if (!paystackResponse.ok || !resData?.status || !resData?.data?.authorization_url) {
+      await this.prisma.transaction.updateMany({
+        where: { id: txn.id, status: 'pending' },
+        data: { status: 'failed' },
+      });
+      throw new BadRequestException(
+        resData?.message || 'Paystack could not initialize this payment.',
+      );
+    }
+
+    return {
+      success: true,
+      transactionId: txn.id,
+      authorizationUrl: resData.data.authorization_url,
+      reference,
+    };
   }
 
   async payBill(userId: string, billDto: BillDto) {
+    if (!this.hasBillerProvider()) {
+      throw new ServiceUnavailableException(
+        'Bill payments are temporarily unavailable until a verified biller provider is connected.',
+      );
+    }
     const {
       billerName,
       category,
@@ -636,6 +715,11 @@ export class TransactionsService {
   }
 
   async buyAirtime(userId: string, airtimeDto: AirtimeDto) {
+    if (!this.hasAirtimeProvider()) {
+      throw new ServiceUnavailableException(
+        'Airtime and data purchases are temporarily unavailable until a verified provider is connected.',
+      );
+    }
     const {
       phone,
       amount,
@@ -774,33 +858,74 @@ export class TransactionsService {
   }
   // whichever one fires first completes the transaction; the other is a
   // no-op thanks to the status check, so a payment is never credited twice.
-  private async completeFundingTransaction(reference: string) {
+  private async completeFundingTransaction(
+    reference: string,
+    providerData?: { amount: number; currency: string },
+  ) {
     const result = await this.prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({
         where: { reference },
         include: { user: true },
       });
 
-      if (!transaction) return { success: false, status: 'not_found' as const };
-      if (transaction.status === 'completed')
+      if (
+        !transaction ||
+        transaction.category !== 'funding' ||
+        transaction.type !== 'credit'
+      ) {
+        return { success: false, status: 'not_found' as const };
+      }
+      if (transaction.status === 'completed') {
         return {
           success: true,
           status: 'completed' as const,
           alreadyProcessed: true,
         };
+      }
+      if (transaction.status !== 'pending') {
+        return { success: false, status: 'not_pending' as const };
+      }
 
-      await tx.transaction.update({
-        where: { reference },
+      // Paystack reports NGN amounts in kobo; wallet and ledger values are
+      // stored in naira. A signed event is not enough: the exact amount and
+      // currency must also match the funding instruction we created.
+      if (
+        providerData &&
+        (providerData.currency !== 'NGN' ||
+          !Number.isSafeInteger(providerData.amount) ||
+          providerData.amount !== Math.round(Number(transaction.amount) * 100))
+      ) {
+        return { success: false, status: 'provider_amount_mismatch' as const };
+      }
+
+      // Compare-and-set prevents a webhook and a browser verification call
+      // from both crediting the same pending funding transaction.
+      const claimed = await tx.transaction.updateMany({
+        where: {
+          reference,
+          category: 'funding',
+          type: 'credit',
+          status: 'pending',
+        },
         data: { status: 'completed' },
       });
+      if (claimed.count !== 1) {
+        const current = await tx.transaction.findUnique({ where: { reference } });
+        if (current?.status === 'completed') {
+          return {
+            success: true,
+            status: 'completed' as const,
+            alreadyProcessed: true,
+          };
+        }
+        return { success: false, status: 'not_pending' as const };
+      }
+
       await tx.wallet.update({
         where: { userId: transaction.userId },
         data: { balance: { increment: transaction.amount } },
       });
 
-      // Debit the Paystack clearing account (funds ZannyPay is holding
-      // pending settlement to its own bank account — that settlement leg
-      // is outside this ledger's scope), credit the customer's wallet.
       const walletAccount = await this.ledgerService.getOrCreateCustomerAccount(
         LedgerAccountType.CUSTOMER_WALLET,
         transaction.userId,
@@ -839,13 +964,8 @@ export class TransactionsService {
       return { success: true, status: 'completed' as const, transaction };
     });
 
-    // Only run the fraud engine on the actual credit event, not on a
-    // replayed webhook/verify call for a top-up that was already completed
-    // (the webhook and the manual verify-on-return-from-checkout path can
-    // both fire for the same payment; only the first one is a real event).
     if (
       result.success &&
-      !result.alreadyProcessed &&
       'transaction' in result &&
       result.transaction
     ) {
@@ -859,12 +979,15 @@ export class TransactionsService {
     return {
       success: result.success,
       status: result.status,
-      alreadyProcessed: (result as any).alreadyProcessed,
+      alreadyProcessed: 'alreadyProcessed' in result ? result.alreadyProcessed : false,
     };
   }
 
-  async handlePaystackWebhook(reference: string) {
-    const result = await this.completeFundingTransaction(reference);
+  async handlePaystackWebhook(
+    reference: string,
+    providerData: { amount: number; currency: string },
+  ) {
+    const result = await this.completeFundingTransaction(reference, providerData);
     return { handled: true, ...result };
   }
 
@@ -877,18 +1000,27 @@ export class TransactionsService {
     const localTxn = await this.prisma.transaction.findFirst({
       where: { reference, userId },
     });
-    if (!localTxn) throw new NotFoundException('Transaction not found.');
+    if (!localTxn || localTxn.category !== 'funding' || localTxn.type !== 'credit') {
+      throw new NotFoundException('Funding transaction not found.');
+    }
 
     if (localTxn.status === 'completed') {
       return { success: true, status: 'completed' };
     }
 
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      throw new ServiceUnavailableException(
+        'Paystack verification is not configured.',
+      );
+    }
+
     try {
       const verifyResponse = await fetch(
-        `https://api.paystack.co/transaction/verify/${reference}`,
+        `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
         {
           headers: {
-            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+            Authorization: `Bearer ${secret}`,
           },
         },
       );
@@ -899,8 +1031,11 @@ export class TransactionsService {
         verifyData.status &&
         verifyData.data?.status === 'success'
       ) {
-        const result = await this.completeFundingTransaction(reference);
-        return { success: true, status: result.status };
+        const result = await this.completeFundingTransaction(reference, {
+          amount: verifyData.data.amount,
+          currency: verifyData.data.currency,
+        });
+        return { success: result.success, status: result.status };
       }
 
       // Paystack hasn't confirmed success yet (still processing, or the
