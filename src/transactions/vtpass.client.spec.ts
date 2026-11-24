@@ -10,7 +10,7 @@ describe('VtpassClient', () => {
       VTPASS_PUBLIC_KEY: 'test-public-key',
       VTPASS_SECRET_KEY: 'test-secret-key',
     };
-    global.fetch = jest.fn() as jest.Mock;
+    global.fetch = jest.fn<typeof fetch>();
   });
 
   afterEach(() => {
