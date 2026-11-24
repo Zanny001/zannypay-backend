@@ -1,4 +1,5 @@
 import { ServiceUnavailableException, BadRequestException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { VtpassClient } from './vtpass.client';
@@ -171,6 +172,112 @@ describe('VtpassPaymentsService', () => {
     expect(tx.transaction.updateMany).not.toHaveBeenCalled();
     expect(tx.wallet.updateMany).not.toHaveBeenCalled();
     expect(tx.transaction.create).not.toHaveBeenCalled();
+  });
+
+
+  it('atomically reserves wallet funds and ledger entries before a confirmed purchase', async () => {
+    const previousFlags = {
+      enabled: process.env.VTPASS_BILL_PAYMENTS_ENABLED,
+      verified: process.env.VTPASS_SANDBOX_VERIFIED,
+      jwt: process.env.JWT_SECRET,
+    };
+    process.env.VTPASS_BILL_PAYMENTS_ENABLED = 'true';
+    process.env.VTPASS_SANDBOX_VERIFIED = 'true';
+    process.env.JWT_SECRET = 'test-jwt-secret-for-hmac';
+    const pinHash = await bcrypt.hash('1234', 4);
+
+    vtpass.assertPurchaseConfigured.mockReturnValue(undefined);
+    vtpass.getServices.mockResolvedValue({
+      content: [{
+        serviceID: 'mtn',
+        name: 'MTN Airtime',
+        minimium_amount: '50',
+        maximum_amount: '50000',
+        product_type: 'fix',
+      }],
+    });
+    vtpass.createRequestId.mockReturnValue('202611241930ABCDEF1234');
+    vtpass.purchase.mockResolvedValue({
+      code: '000',
+      content: { transactions: { status: 'delivered', transactionId: 'provider-123' } },
+      purchased_code: '',
+    });
+
+    const created = {
+      id: 'txn-1',
+      userId: 'user-1',
+      amount: 500,
+      status: 'pending',
+      reference: 'VTP-202611241930ABCDEF1234',
+      providerRequestId: '202611241930ABCDEF1234',
+      providerServiceId: 'mtn',
+      providerVariationCode: null,
+      customerIdentifier: '••••1111',
+      customerIdentifierHash: expect.any(String),
+      title: 'MTN Airtime',
+      createdAt: new Date(),
+    };
+    const tx = {
+      user: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'user-1',
+          isFrozen: false,
+          pin: pinHash,
+          phone: '08011111111',
+        }),
+      },
+      wallet: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      transaction: { create: jest.fn().mockResolvedValue(created) },
+    };
+    prisma.transaction = {
+      findFirst: jest.fn().mockResolvedValue(null),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUnique: jest.fn().mockResolvedValue({
+        ...created,
+        status: 'completed',
+        providerStatus: 'delivered',
+        providerTransactionId: 'provider-123',
+      }),
+    };
+    prisma.$transaction = jest.fn(async (callback: any) => callback(tx));
+    ledger.getOrCreateCustomerAccount = jest.fn().mockResolvedValue({ id: 'wallet-ledger' });
+    ledger.getOrCreateSystemAccount = jest.fn().mockResolvedValue({ id: 'biller-clearing' });
+    ledger.postJournal = jest.fn().mockResolvedValue(undefined);
+
+    try {
+      const result = await service.purchase('user-1', {
+        identifier: 'airtime',
+        serviceID: 'mtn',
+        billersCode: '08011111111',
+        amount: 500,
+        phone: '08011111111',
+        pin: '1234',
+        idempotencyKey: 'bill-attempt-0000001',
+      } as any);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.wallet.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', balance: { gte: 500 } },
+        data: { balance: { decrement: 500 } },
+      });
+      expect(ledger.postJournal).toHaveBeenCalledWith(
+        tx,
+        [
+          { accountId: 'wallet-ledger', direction: 'DEBIT', amount: 500 },
+          { accountId: 'biller-clearing', direction: 'CREDIT', amount: 500 },
+        ],
+        expect.objectContaining({ transactionId: 'txn-1' }),
+      );
+      expect(vtpass.purchase).toHaveBeenCalledTimes(1);
+      expect(result.status).toBe('completed');
+    } finally {
+      if (previousFlags.enabled === undefined) delete process.env.VTPASS_BILL_PAYMENTS_ENABLED;
+      else process.env.VTPASS_BILL_PAYMENTS_ENABLED = previousFlags.enabled;
+      if (previousFlags.verified === undefined) delete process.env.VTPASS_SANDBOX_VERIFIED;
+      else process.env.VTPASS_SANDBOX_VERIFIED = previousFlags.verified;
+      if (previousFlags.jwt === undefined) delete process.env.JWT_SECRET;
+      else process.env.JWT_SECRET = previousFlags.jwt;
+    }
   });
 
   it('keeps purchases disabled unless both sandbox gates are enabled', async () => {
