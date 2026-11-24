@@ -70,18 +70,6 @@ describe('TransactionsService', () => {
     const tx = {
       user: {
         findUnique: jest.fn().mockResolvedValue({
-          id: 'user-1',
-          isFrozen: false,
-          pin: 'hashed-pin',
-          accountNumber: '0000000001',
-          phone: '08000000000',
-          businessAccountNumber: null,
-          wallet: { balance: 100000 },
-          email: 'user@example.test',
-        }),
-      },
-      user: {
-        findUnique: jest.fn().mockResolvedValue({
           id: 'user-1', isFrozen: false, pin: 'hashed-pin',
           accountNumber: '0000000001', phone: '08000000000',
           businessAccountNumber: null, wallet: { balance: 100000 },
