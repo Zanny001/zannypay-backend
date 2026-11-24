@@ -153,9 +153,19 @@ export class TransactionsService {
       recipientAccount,
       amount,
       pin,
+      bank,
       note,
       idempotencyKey,
     } = transferDto;
+
+    // Explicit bank selection must never fall through to the internal
+    // account-number lookup. Outgoing payouts remain disabled until a real
+    // disbursement adapter is configured and reconciled.
+    if (bank && bank !== 'ZannyPay') {
+      throw new ServiceUnavailableException(
+        'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
+      );
+    }
 
     const existing = await this.findExistingByIdempotencyKey(
       userId,
