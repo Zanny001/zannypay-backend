@@ -17,7 +17,14 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });
-  app.use(json({ limit: '6mb' }));
+  app.use(json({
+    limit: '6mb',
+    // Paystack signs the exact HTTP request bytes. Preserve them before
+    // JSON parsing; JSON.stringify(parsedBody) is not signature-equivalent.
+    verify: (req: any, _res, buffer) => {
+      req.rawBody = Buffer.from(buffer);
+    },
+  }));
   app.use(urlencoded({ extended: true, limit: '6mb' }));
 
   // Trust the first hop in front of this app (Render/Railway/Heroku/Nginx/
