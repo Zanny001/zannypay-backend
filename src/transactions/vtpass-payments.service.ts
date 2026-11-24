@@ -10,7 +10,7 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { LedgerAccountType, LedgerDirection } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { createHash } from 'crypto';
+import { createHmac } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { VtpassClient } from './vtpass.client';
@@ -117,7 +117,7 @@ export class VtpassPaymentsService {
     const variationCode = dto.variation_code.trim();
     const billersCode = dto.billersCode.trim();
     const idempotencyKey = `${userId}:${dto.idempotencyKey}`;
-    const customerIdentifierHash = createHash('sha256').update(billersCode).digest('hex');
+    const hmacSecret = process.env.JWT_SECRET;\n    if (!hmacSecret) {\n      throw new ServiceUnavailableException('Bill payment security configuration is incomplete.');\n    }\n    const customerIdentifierHash = createHmac('sha256', hmacSecret).update(billersCode).digest('hex');
     const existing = await this.prisma.transaction.findFirst({
       where: { userId, idempotencyKey },
     });
