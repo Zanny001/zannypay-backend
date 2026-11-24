@@ -202,6 +202,23 @@ describe('TransactionsService.transferFunds — business account routing', () =>
     expect(creditCall[0].data.receivedVia).toBe('personal');
   });
 
+  it('rejects a concurrent spend when the conditional wallet debit updates no row', async () => {
+    tx.user.findUnique.mockResolvedValue({ ...sender });
+    tx.user.findFirst.mockResolvedValue(makeRecipient());
+    tx.wallet.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.transferFunds('sender-1', {
+        recipientAccount: '9022222222',
+        amount: 1000,
+        pin: '1234',
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(tx.transaction.create).not.toHaveBeenCalled();
+    expect(tx.wallet.update).not.toHaveBeenCalled();
+  });
+
   it('blocks a transfer to your own business account number — the wash-transaction / fake-revenue guard', async () => {
     tx.user.findUnique.mockResolvedValue({
       ...sender,
