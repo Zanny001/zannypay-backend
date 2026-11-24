@@ -6,6 +6,7 @@ import {
   Res,
   BadRequestException,
   ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { verifyPaystackSignature } from './paystack-signature';
@@ -47,7 +48,15 @@ export class PaystackWebhookController {
       if (!Number.isSafeInteger(amount) || amount <= 0 || currency !== 'NGN') {
         throw new BadRequestException('Paystack charge amount or currency is invalid.');
       }
-      await this.transactionsService.handlePaystackWebhook(reference, { amount, currency });
+      const result = await this.transactionsService.handlePaystackWebhook(reference, { amount, currency });
+      // Do not acknowledge an authenticated but unmatched/mismatched funding
+      // event as successfully handled. This keeps operational failures visible
+      // and prevents a silent 200 from masking a wallet-credit discrepancy.
+      if (!result.success) {
+        throw new UnprocessableEntityException(
+          `Paystack funding event was not applied: ${result.status}.`,
+        );
+      }
     }
 
     return res.status(200).send('Event Acknowledged');
