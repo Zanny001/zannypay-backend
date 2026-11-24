@@ -570,7 +570,7 @@ export class TransactionsService {
 
     const backendUrl = (
       process.env.BACKEND_URL || 'https://zannypay-backend.onrender.com'
-    ).replace(/\\/+$/, '');
+    ).replace(/\/+$/, '');
     const callbackUrl = `${backendUrl}/api/v1/wallet/payment-success`;
 
     let paystackResponse: Response;
