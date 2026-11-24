@@ -8,6 +8,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { BeneficiariesService } from '../beneficiaries/beneficiaries.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+jest.mock('bcrypt', () => ({ compare: jest.fn().mockResolvedValue(true) }));
 import * as bcrypt from 'bcrypt';
 
 describe('TransactionsService', () => {
@@ -64,7 +65,7 @@ describe('TransactionsService', () => {
   });
 
   it('rejects external bank transfers before any wallet mutation', async () => {
-    jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+    (bcrypt.compare as jest.Mock).mockResolvedValue(true);
     const tx = {
       user: {
         findUnique: jest.fn().mockResolvedValue({
@@ -91,6 +92,6 @@ describe('TransactionsService', () => {
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(tx.wallet.update).not.toHaveBeenCalled();
     expect(tx.transaction.create).not.toHaveBeenCalled();
-    jest.restoreAllMocks();
+    (bcrypt.compare as jest.Mock).mockReset().mockResolvedValue(true);
   });
 });
