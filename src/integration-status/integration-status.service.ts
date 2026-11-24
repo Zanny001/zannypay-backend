@@ -18,11 +18,6 @@ export class IntegrationStatusService {
       (env.SMTP_FROM || env.SMTP_USER)
     );
     const paystackConfigured = !!env.PAYSTACK_SECRET_KEY;
-    const payoutConfigured =
-      env.PAYOUT_PROVIDER === 'paystack' &&
-      paystackConfigured &&
-      env.PAYSTACK_TRANSFER_ENABLED === 'true';
-
     const status = (
       configured: boolean,
       note: string,
@@ -61,10 +56,9 @@ export class IntegrationStatusService {
             : 'Configure PAYSTACK_SECRET_KEY.',
         ),
         externalBankPayouts: status(
-          payoutConfigured,
-          payoutConfigured
-            ? 'Payout configuration is present; complete recipient, webhook, reconciliation and end-to-end test validation.'
-            : 'Not enabled. Select an approved payout provider and configure its credentials and transfer permissions.',
+          false,
+          'The backend currently blocks external payouts; no live payout adapter is integrated. Provider credentials alone do not enable transfers.',
+          true,
         ),
         bvnNinAndLiveness: status(
           false,
