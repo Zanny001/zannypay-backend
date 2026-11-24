@@ -401,7 +401,7 @@ export class TransactionsService {
     let response: Response;
     let payload: any;
     try {
-      response = await fetch('https://api.paystack.co/bank?currency=NGN', {
+      response = await fetch('https://api.paystack.co/bank?currency=NGN&perPage=100', {
         headers: this.paystackAuthHeaders(),
       });
       payload = await response.json();
