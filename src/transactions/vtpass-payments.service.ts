@@ -270,7 +270,7 @@ export class VtpassPaymentsService {
     if (state === 'pending') {
       await this.prisma.transaction.updateMany({
         where: { id: transactionId, status: 'pending' },
-        data: { providerStatus },
+        data: { providerStatus, providerLastCheckedAt: new Date() },
       });
       return;
     }
@@ -281,7 +281,7 @@ export class VtpassPaymentsService {
           status: 'completed',
           providerStatus,
           providerTransactionId,
-          purchasedCode,
+          purchasedCode,\n          providerLastCheckedAt: new Date(),
         },
       });
       return;
@@ -292,7 +292,7 @@ export class VtpassPaymentsService {
       if (!original || original.status !== 'pending') return;
       const claimed = await tx.transaction.updateMany({
         where: { id: transactionId, status: 'pending' },
-        data: { status: 'failed', providerStatus },
+        data: { status: 'failed', providerStatus, providerLastCheckedAt: new Date() },
       });
       if (claimed.count !== 1) return;
 
@@ -351,7 +351,7 @@ export class VtpassPaymentsService {
         const response = await this.vtpass.requery(transaction.providerRequestId!);
         await this.applyProviderOutcome(transaction.id, response);
       } catch (error: any) {
-        this.logger.warn(`VTpass requery failed for transaction ${transaction.id}; it remains pending.`);
+        this.logger.warn(`VTpass requery failed for transaction ${transaction.id}; it remains pending.`);\n        await this.prisma.transaction.updateMany({ where: { id: transaction.id, status: 'pending' }, data: { providerStatus: 'requery_unavailable', providerLastCheckedAt: new Date() } });
       }
     }
   }
