@@ -31,6 +31,7 @@ import { KycModule } from './kyc/kyc.module'; // <-- WORLD-CLASS UPGRADE: docume
 import { ComplianceExportModule } from './compliance-export/compliance-export.module'; // <-- WORLD-CLASS UPGRADE: KYC decision record PDF
 import { LedgerModule } from './ledger/ledger.module'; // <-- WORLD-CLASS UPGRADE: double-entry ledger + reconciliation
 import { AnalyticsModule } from './analytics/analytics.module'; // <-- WORLD-CLASS UPGRADE: event tracking
+import { IntegrationStatusModule } from './integration-status/integration-status.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { AnalyticsModule } from './analytics/analytics.module'; // <-- WORLD-CLA
     PushModule, // @Global — provides PushService to NotificationsModule
     LedgerModule, // @Global — provides LedgerService/ReconciliationService to TransactionsModule, AdminModule, SavingsModule, LoansModule, RecurringTransfersModule
     AnalyticsModule, // @Global — provides AnalyticsService to AuthModule, AdminModule, TransactionsModule, SavingsModule, CardsModule, LoansModule, SupportModule
+    IntegrationStatusModule,
     AuditLogModule, // @Global — registers AuditLogService once for admin-auth, admin, fraud, admin-security
     NotificationsModule, // @Global — registers NotificationsService once for admin, fraud, support, transactions
     ScheduleModule.forRoot(), // <-- powers RecurringTransfersService's @Cron job
