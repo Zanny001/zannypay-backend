@@ -26,7 +26,7 @@ export function verifyPaystackSigningSecret(
   secret: string,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): boolean {
-  if (!secret || typeof header !== 'string' || header.length > 4096) return false;
+  if (!secret?.startsWith('whsec_') || typeof header !== 'string' || header.length > 4096) return false;
 
   let timestamp: string | null = null;
   const signatures: string[] = [];
