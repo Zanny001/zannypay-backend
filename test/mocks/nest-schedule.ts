@@ -1,10 +1,17 @@
-// The scheduler is an infrastructure integration. Unit tests exercise
-// service behavior without starting cron timers or loading its ESM package.
-export const Cron = (..._args: unknown[]) => (
-  _target: object,
-  _propertyKey: string,
-  _descriptor: PropertyDescriptor,
-) => undefined;
+// The scheduler is infrastructure; unit tests exercise service behavior
+// without starting cron timers or loading its ESM-only package.
+export const Cron = (...decoratorArgs: unknown[]) => {
+  void decoratorArgs;
+  return (
+    target: object,
+    propertyKey: string,
+    descriptor: PropertyDescriptor,
+  ) => {
+    void target;
+    void propertyKey;
+    return descriptor;
+  };
+};
 
 export const CronExpression = {
   EVERY_HOUR: '0 * * * *',
