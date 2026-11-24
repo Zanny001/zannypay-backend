@@ -472,6 +472,7 @@ model Transaction {
   providerTransactionId String?
   providerStatus String?
   providerLastCheckedAt DateTime?
+  providerIdentifier String?
   providerServiceId String?
   providerVariationCode String?
   customerIdentifier String?
