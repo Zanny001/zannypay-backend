@@ -104,7 +104,7 @@ export class VtpassPaymentsService {
   }
 
   async purchase(userId: string, dto: VtpassBillPurchaseDto) {
-    if (process.env.VTPASS_BILL_PAYMENTS_ENABLED !== 'true') {
+    if (process.env.VTPASS_BILL_PAYMENTS_ENABLED !== 'true' || process.env.VTPASS_SANDBOX_VERIFIED !== 'true') {
       throw new ServiceUnavailableException(
         'VTpass bill purchases are not enabled yet. The sandbox catalogue and verification endpoints are available.',
       );
@@ -115,28 +115,25 @@ export class VtpassPaymentsService {
     const serviceID = dto.serviceID.trim();
     const variationCode = dto.variation_code.trim();
     const billersCode = dto.billersCode.trim();
-    const { amount, productName } = await this.resolveFixedPrice(
-      serviceID,
-      variationCode,
-      dto.amount,
-    );
-    await this.verifyRequiredCustomer(dto);
-
     const idempotencyKey = `${userId}:${dto.idempotencyKey}`;
     const existing = await this.prisma.transaction.findFirst({
       where: { userId, idempotencyKey },
     });
     if (existing) {
+      const maskedIdentifier = `••••${billersCode.slice(-4)}`;
       if (
         existing.providerServiceId !== serviceID ||
         existing.providerVariationCode !== variationCode ||
-        Math.abs(Number(existing.amount) - amount) > 0.001
+        existing.customerIdentifier !== maskedIdentifier ||
+        (dto.amount !== undefined && Math.abs(Number(existing.amount) - Number(dto.amount)) > 0.001)
       ) {
         throw new BadRequestException('This idempotency key was already used for a different bill purchase.');
       }
       return this.receipt(existing);
     }
 
+    const { amount, productName } = await this.resolveFixedPrice(serviceID, variationCode, dto.amount);
+    await this.verifyRequiredCustomer(dto);
     const requestId = this.vtpass.createRequestId();
     let reserved: any;
     try {
