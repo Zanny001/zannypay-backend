@@ -101,6 +101,22 @@ describe('OtpService', () => {
     expect(await bcrypt.compare(code, stored.codeHash)).toBe(true);
   });
 
+  it('removes an undelivered code so the customer can retry immediately', async () => {
+    delivery.send.mockRejectedValueOnce(new Error('provider unavailable'));
+
+    await expect(requestFresh()).rejects.toThrow(
+      'OTP delivery is temporarily unavailable',
+    );
+    expect(prisma._rows).toHaveLength(0);
+
+    delivery.send.mockResolvedValueOnce(undefined);
+    await expect(requestFresh()).resolves.toEqual({
+      sent: true,
+      expiresInSeconds: 600,
+    });
+    expect(prisma._rows).toHaveLength(1);
+  });
+
   it('enforces a 60-second resend cooldown per target+purpose', async () => {
     await requestFresh();
     await expect(requestFresh()).rejects.toBeInstanceOf(ThrottlerException);
