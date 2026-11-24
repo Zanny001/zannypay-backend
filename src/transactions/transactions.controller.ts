@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { TransactionsService } from './transactions.service';
+import { VtpassClient } from './vtpass.client';
 import { TransferDto } from './dto/transfer.dto';
 import { FundDto } from './dto/fund.dto';
 import { BillDto } from './dto/bill.dto';
@@ -20,7 +21,24 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 // Changed from 'transactions' to 'wallet' to match frontend WalletContext
 @Controller('wallet')
 export class TransactionsController {
-  constructor(private readonly transactionsService: TransactionsService) {}
+  constructor(
+    private readonly transactionsService: TransactionsService,
+    private readonly vtpassClient: VtpassClient,
+  ) {}
+
+  // Read-only VTpass sandbox catalogue. This exposes provider-defined service
+  // IDs and product variations to authenticated clients; it never initiates a charge.
+  @UseGuards(JwtAuthGuard)
+  @Get('bill-services')
+  async listBillServices(@Query('identifier') identifier: string) {
+    return this.vtpassClient.getServices(identifier || 'data');
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('bill-services/:serviceId/variations')
+  async listBillServiceVariations(@Param('serviceId') serviceId: string) {
+    return this.vtpassClient.getServiceVariations(serviceId);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get('banks')
