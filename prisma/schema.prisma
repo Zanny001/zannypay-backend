@@ -466,11 +466,24 @@ model Transaction {
   // the breakdown of how it was paid for. Only ever set on bill/airtime
   // debits, where redemption is offered.
   pointsRedeemed Int @default(0)
+  // VTpass bill fulfilment metadata. The request ID is unique and persisted
+  // before the provider call so an uncertain outcome can only be requeried.
+  providerRequestId String? @unique
+  providerTransactionId String?
+  providerStatus String?
+  providerLastCheckedAt DateTime?
+  providerIdentifier String?
+  providerServiceId String?
+  providerVariationCode String?
+  customerIdentifier String?
+  customerIdentifierHash String?
+  purchasedCode String?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   ledgerEntries LedgerEntry[] // the balanced journal(s) that actually moved money for this transaction — see LedgerService
 
   @@index([userId, createdAt]) // hot path for the fraud engine's per-user velocity window scans
+  @@index([category, status, providerLastCheckedAt, createdAt]) // pending biller reconciliation
 }
 
 model SavingsGoal {

@@ -72,7 +72,9 @@ export class IntegrationStatusService {
         ),
         airtimeDataAndBills: status(
           false,
-          'No live biller/airtime fulfilment adapter is integrated.',
+          env.VTPASS_API_KEY && env.VTPASS_PUBLIC_KEY && env.VTPASS_SECRET_KEY
+            ? 'VTpass sandbox client, authenticated catalogue and customer-verification endpoints, catalogue-backed fixed/flexible amount validation, idempotent pending purchase reservation, atomic wallet/ledger posting, provider settlement/reversal and scheduled requery are implemented in the VTpass sandbox adapter. Actual sandbox credentials, provider responses and end-to-end reconciliation have not yet been verified. Purchases require BOTH VTPASS_BILL_PAYMENTS_ENABLED=true and VTPASS_SANDBOX_VERIFIED=true; keep both unset until controlled sandbox tests pass.'
+            : 'Configure VTPASS_API_KEY, VTPASS_PUBLIC_KEY and VTPASS_SECRET_KEY for sandbox integration. Purchases remain disabled pending credential and end-to-end sandbox verification.',
           true,
         ),
         loans: status(

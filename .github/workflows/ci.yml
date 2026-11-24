@@ -18,5 +18,5 @@ jobs:
       - run: npm ci
       - run: npm test -- --runInBand
       - run: npm run build
-      - run: npx prettier --write src/main.ts src/transactions/paystack-signature.spec.ts src/transactions/paystack-signature.ts src/transactions/paystack-webhook.controller.ts src/transactions/transactions.service.spec.ts src/transactions/transactions.service.ts test/mocks/nest-schedule.ts
+      - run: npx prettier --write src/main.ts src/transactions/paystack-signature.spec.ts src/transactions/paystack-signature.ts src/transactions/paystack-webhook.controller.ts src/transactions/transactions.service.spec.ts src/transactions/transactions.service.ts src/transactions/transactions.controller.ts src/transactions/transactions.controller.spec.ts src/transactions/transactions.module.ts src/transactions/vtpass.client.ts src/transactions/vtpass.client.spec.ts src/transactions/vtpass-payments.service.ts src/transactions/vtpass-payments.service.spec.ts src/transactions/dto/vtpass-customer-verify.dto.ts src/transactions/dto/vtpass-bill-purchase.dto.ts src/integration-status/integration-status.service.ts test/mocks/nest-schedule.ts
       - run: npm run lint
