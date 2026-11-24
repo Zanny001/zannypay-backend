@@ -437,7 +437,7 @@ export class VtpassPaymentsService {
     });
     for (const transaction of pending) {
       try {
-        const response = await this.vtpass.requery(transaction.providerRequestId!);
+        const response = await this.vtpass.requery(transaction.providerRequestId);
         await this.applyProviderOutcome(transaction.id, response);
       } catch {
         this.logger.warn(`VTpass requery failed for transaction ${transaction.id}; it remains pending.`);
