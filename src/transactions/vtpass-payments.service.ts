@@ -35,7 +35,7 @@ export class VtpassPaymentsService {
     ).toLowerCase();
 
     if (['000', '001'].includes(code) && status === 'delivered') return 'completed';
-    if (code === '016' || code === '091') {
+    if (code === '016' || code === '040' || code === '091') {
       return 'failed';
     }
     // VTpass explicitly instructs integrators to requery every unrecognised,
