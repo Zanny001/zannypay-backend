@@ -255,7 +255,7 @@ describe('VtpassPaymentsService', () => {
         phone: '08011111111',
         pin: '1234',
         idempotencyKey: 'bill-attempt-0000001',
-      } as any);
+      });
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(tx.wallet.updateMany).toHaveBeenCalledWith({
