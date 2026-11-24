@@ -26,6 +26,16 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class TransactionsService {
+  // No production biller or airtime/data adapter is wired in this release.
+  // Keep these paths disabled until a provider can confirm fulfilment.
+  private hasBillerProvider(): boolean {
+    return false;
+  }
+
+  private hasAirtimeProvider(): boolean {
+    return false;
+  }
+
   // Reward points → naira conversion for bill/airtime purchases. Kept as a
   // single constant here rather than DB-configurable for now — it's a
   // conservative, low-stakes rate (a maximally engaged daily-check-in user
@@ -524,6 +534,11 @@ export class TransactionsService {
   }
 
   async payBill(userId: string, billDto: BillDto) {
+    if (!this.hasBillerProvider()) {
+      throw new ServiceUnavailableException(
+        'Bill payments are temporarily unavailable until a verified biller provider is connected.',
+      );
+    }
     const {
       billerName,
       category,
@@ -663,6 +678,11 @@ export class TransactionsService {
   }
 
   async buyAirtime(userId: string, airtimeDto: AirtimeDto) {
+    if (!this.hasAirtimeProvider()) {
+      throw new ServiceUnavailableException(
+        'Airtime and data purchases are temporarily unavailable until a verified provider is connected.',
+      );
+    }
     const {
       phone,
       amount,
