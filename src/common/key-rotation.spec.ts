@@ -34,35 +34,38 @@ describe('encryption key rotation', () => {
 
   it('dry-runs without writing and reports the planned count', async () => {
     const rows = [{ id: 'a', value: encryptWithKey('one', oldKey) }];
+    const replaceIfUnchanged = jest.fn();
     const target: RotationTarget = {
       name: 'test',
       fetchBatch: async (after, take) => rows.filter((r) => !after || r.id > after).slice(0, take),
-      replaceIfUnchanged: jest.fn(),
+      replaceIfUnchanged,
     };
     const report = await rotateTarget(target, oldKey, newKey, { apply: false });
     expect(report.rotated).toBe(1);
-    expect(target.replaceIfUnchanged.bind(target)).not.toHaveBeenCalled();
+    expect(replaceIfUnchanged).not.toHaveBeenCalled();
   });
 
   it('stops when a target repeats a page', async () => {
+    const fetchBatch = jest.fn().mockResolvedValue([{ id: 'row-1', value: 'bad' }]);
     const target: RotationTarget = {
       name: 'stuck',
-      fetchBatch: jest.fn().mockResolvedValue([{ id: 'row-1', value: 'bad' }]),
+      fetchBatch,
       replaceIfUnchanged: jest.fn(),
     };
     await expect(rotateTarget(target, oldKey, newKey, { apply: false }))
       .rejects.toThrow('did not advance its pagination cursor');
-    expect(target.fetchBatch.bind(target)).toHaveBeenCalledTimes(2);
+    expect(fetchBatch).toHaveBeenCalledTimes(2);
   });
 
   it('rejects unsafe batch sizes', async () => {
+    const fetchBatch = jest.fn();
     const target: RotationTarget = {
       name: 'test',
-      fetchBatch: jest.fn(),
+      fetchBatch,
       replaceIfUnchanged: jest.fn(),
     };
     await expect(rotateTarget(target, oldKey, newKey, { apply: false, batchSize: 0 }))
       .rejects.toThrow('batchSize must be an integer');
-    expect(target.fetchBatch.bind(target)).not.toHaveBeenCalled();
+    expect(fetchBatch).not.toHaveBeenCalled();
   });
 });
