@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { KYC_VERIFICATION_PROVIDER } from './kyc.tokens';
@@ -22,6 +22,19 @@ export class KycDocumentsService {
   ) {}
 
   async submit(userId: string, dto: SubmitKycDocumentDto) {
+    // Do not upload and orphan a selfie when production is still wired to
+    // the mock liveness adapter. ID-document uploads remain available for
+    // manual review; selfie verification must wait for a real provider.
+    if (
+      dto.type === 'selfie' &&
+      process.env.NODE_ENV === 'production' &&
+      this.verificationProvider.name === 'mock'
+    ) {
+      throw new ServiceUnavailableException(
+        'Selfie liveness verification is not configured. Please try again later.',
+      );
+    }
+
     const fileUrl = await this.storageService.storeImage(
       dto.file,
       `kyc-documents/${userId}`,
