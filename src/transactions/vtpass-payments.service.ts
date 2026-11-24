@@ -10,6 +10,7 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { LedgerAccountType, LedgerDirection } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { VtpassClient } from './vtpass.client';
@@ -116,6 +117,7 @@ export class VtpassPaymentsService {
     const variationCode = dto.variation_code.trim();
     const billersCode = dto.billersCode.trim();
     const idempotencyKey = `${userId}:${dto.idempotencyKey}`;
+    const customerIdentifierHash = createHash('sha256').update(billersCode).digest('hex');
     const existing = await this.prisma.transaction.findFirst({
       where: { userId, idempotencyKey },
     });
@@ -125,6 +127,7 @@ export class VtpassPaymentsService {
         existing.providerServiceId !== serviceID ||
         existing.providerVariationCode !== variationCode ||
         existing.customerIdentifier !== maskedIdentifier ||
+        existing.customerIdentifierHash !== customerIdentifierHash ||
         (dto.amount !== undefined && Math.abs(Number(existing.amount) - Number(dto.amount)) > 0.001)
       ) {
         throw new BadRequestException('This idempotency key was already used for a different bill purchase.');
@@ -169,7 +172,7 @@ export class VtpassPaymentsService {
             providerStatus: 'initiated',
             providerServiceId: serviceID,
             providerVariationCode: variationCode,
-            customerIdentifier: `••••${billersCode.slice(-4)}`,
+            customerIdentifier: `••••${billersCode.slice(-4)}`,\n            customerIdentifierHash,
           },
         });
 
