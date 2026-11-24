@@ -282,7 +282,8 @@ export class VtpassPaymentsService {
           status: 'completed',
           providerStatus,
           providerTransactionId,
-          purchasedCode,\n          providerLastCheckedAt: new Date(),
+          purchasedCode,
+          providerLastCheckedAt: new Date(),
         },
       });
       return;
