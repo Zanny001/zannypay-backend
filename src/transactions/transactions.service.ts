@@ -26,7 +26,6 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class TransactionsService {
-  private hasExternalPayoutProvider(): boolean { return false; }
   private hasBillerProvider(): boolean { return false; }
   private hasAirtimeProvider(): boolean { return false; }
 
