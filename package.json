@@ -82,7 +82,10 @@
       "!main.ts"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^@nestjs/schedule$": "<rootDir>/../test/mocks/nest-schedule.ts"
+    }
   },
   "allowScripts": {
     "bcrypt@5.1.1": true,
