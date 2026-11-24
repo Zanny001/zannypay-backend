@@ -1,8 +1,9 @@
-import { IsNumber, IsOptional, IsString, Length, Matches, Min } from 'class-validator';
+import { IsNumber, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
 
 export class FundDto {
   @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(1)
+  @Min(100)
+  @Max(10000000)
   amount: number;
 
   // Stable across retries of one funding intent. This prevents an uncertain
