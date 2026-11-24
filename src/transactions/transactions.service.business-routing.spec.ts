@@ -51,7 +51,10 @@ describe('TransactionsService.transferFunds — business account routing', () =>
   beforeEach(async () => {
     tx = {
       user: { findUnique: jest.fn(), findFirst: jest.fn() },
-      wallet: { update: jest.fn().mockResolvedValue({}) },
+      wallet: {
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       transaction: {
         create: jest
           .fn()
