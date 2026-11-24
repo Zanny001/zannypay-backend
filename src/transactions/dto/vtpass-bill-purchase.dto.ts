@@ -33,7 +33,7 @@ export class VtpassBillPurchaseDto {
   // provider catalogue price exactly.
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(1)
-  amount?: number;
+  amount: number;
 
   @IsOptional()
   @IsString()
