@@ -28,7 +28,8 @@ import { PushModule } from './push/push.module'; // <-- WORLD-CLASS UPGRADE: pus
 import { BeneficiariesModule } from './beneficiaries/beneficiaries.module'; // <-- WORLD-CLASS UPGRADE: backend-persisted saved recipients
 import { AdminNotesModule } from './admin-notes/admin-notes.module'; // <-- WORLD-CLASS UPGRADE: internal admin collaboration layer
 import { KycModule } from './kyc/kyc.module'; // <-- WORLD-CLASS UPGRADE: document/liveness capture
-import { ComplianceExportModule } from './compliance-export/compliance-export.module'; // <-- WORLD-CLASS UPGRADE: KYC decision record PDF
+import { ComplianceExportModule } from './compliance-export/compliance-export.module'; // <-- WORLD-CLASS UPGRADE
+import { IntegrationStatusModule } from './integration-status/integration-status.module';
 import { LedgerModule } from './ledger/ledger.module'; // <-- WORLD-CLASS UPGRADE: double-entry ledger + reconciliation
 import { AnalyticsModule } from './analytics/analytics.module'; // <-- WORLD-CLASS UPGRADE: event tracking
 
@@ -95,6 +96,7 @@ import { AnalyticsModule } from './analytics/analytics.module'; // <-- WORLD-CLA
     AdminNotesModule, // <-- WORLD-CLASS UPGRADE
     KycModule, // <-- WORLD-CLASS UPGRADE
     ComplianceExportModule, // <-- WORLD-CLASS UPGRADE
+    IntegrationStatusModule,
   ],
   controllers: [AppController],
   providers: [
