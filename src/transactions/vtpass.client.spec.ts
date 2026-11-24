@@ -23,9 +23,9 @@ describe('VtpassClient', () => {
       ok: true,
       json: async () => ({ response_description: '000', content: [] }),
     });
-    await new VtpassClient().getServiceCategories();
+    await new VtpassClient().getServices('data');
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://sandbox.vtpass.com/api/service-categories',
+      'https://sandbox.vtpass.com/api/services?identifier=data',
       expect.objectContaining({
         method: 'GET',
         headers: expect.objectContaining({
@@ -56,9 +56,37 @@ describe('VtpassClient', () => {
   });
 
   it('fails closed when credentials are missing', async () => {
+    delete process.env.VTPASS_PUBLIC_KEY;
+    await expect(new VtpassClient().getServices('data')).rejects.toThrow(
+      'VTpass sandbox credentials for this request are not fully configured.',
+    );
+  });
+
+  it('does not require the POST secret key for read-only catalogue requests', async () => {
     delete process.env.VTPASS_SECRET_KEY;
-    await expect(new VtpassClient().getServiceCategories()).rejects.toThrow(
-      'VTpass sandbox credentials are not fully configured.',
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ response_description: '000', content: [] }),
+    });
+    await expect(new VtpassClient().getServices('airtime')).resolves.toBeDefined();
+  });
+
+  it('rejects malformed service identifiers before making a request', async () => {
+    await expect(new VtpassClient().getServices('../pay')).rejects.toThrow(
+      'Invalid VTpass service category.',
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('loads product variations from the documented service-variations endpoint', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ response_description: '000', content: { variations: [] } }),
+    });
+    await new VtpassClient().getServiceVariations('gotv');
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://sandbox.vtpass.com/api/service-variations?serviceID=gotv',
+      expect.objectContaining({ method: 'GET' }),
     );
   });
 
