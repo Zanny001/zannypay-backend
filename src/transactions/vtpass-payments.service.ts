@@ -317,9 +317,8 @@ export class VtpassPaymentsService {
     const providerTransactionId = payload?.content?.transactions?.transactionId
       ? String(payload.content.transactions.transactionId).slice(0, 128)
       : null;
-    const purchasedCode = payload?.purchased_code
-      ? String(payload.purchased_code).slice(0, 512)
-      : null;
+    const purchasedCodeValue = payload?.purchased_code || payload?.token || payload?.mainToken || payload?.main_token;
+    const purchasedCode = purchasedCodeValue ? String(purchasedCodeValue).slice(0, 512) : null;
 
     if (state === 'pending') {
       await this.prisma.transaction.updateMany({
