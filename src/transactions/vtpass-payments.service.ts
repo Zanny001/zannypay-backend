@@ -142,7 +142,11 @@ export class VtpassPaymentsService {
     });
     // VTpass documents 020 as BILLER CONFIRMED. No debit occurs unless this
     // explicit verification result is returned for services that require it.
-    if (String(verified?.code) !== '020') {
+    const verificationCode = String(verified?.code ?? '');
+    const hasVerificationDetails = verified?.content && typeof verified.content === 'object';
+    // VTpass documents 020 as BILLER CONFIRMED; some service-specific
+    // electricity sandbox responses return 000 with a populated customer record.
+    if (verificationCode !== '020' && !(verificationCode === '000' && hasVerificationDetails)) {
       throw new BadRequestException(
         verified?.response_description || 'We could not verify this customer account. Check the details and try again.',
       );
@@ -173,6 +177,7 @@ export class VtpassPaymentsService {
     if (existing) {
       const maskedIdentifier = `••••${billersCode.slice(-4)}`;
       if (
+        existing.providerIdentifier !== dto.identifier ||
         existing.providerServiceId !== serviceID ||
         existing.providerVariationCode !== (variationCode || null) ||
         existing.customerIdentifier !== maskedIdentifier ||
@@ -222,6 +227,7 @@ export class VtpassPaymentsService {
             idempotencyKey,
             providerRequestId: requestId,
             providerStatus: 'initiated',
+            providerIdentifier: dto.identifier,
             providerServiceId: serviceID,
             providerVariationCode: variationCode || null,
             customerIdentifier: `••••${billersCode.slice(-4)}`,
@@ -253,7 +259,20 @@ export class VtpassPaymentsService {
         const replay = await this.prisma.transaction.findFirst({
           where: { userId, idempotencyKey },
         });
-        if (replay) return this.receipt(replay);
+        if (replay) {
+          const maskedIdentifier = `••••${billersCode.slice(-4)}`;
+          if (
+            replay.providerIdentifier !== dto.identifier ||
+            replay.providerServiceId !== serviceID ||
+            replay.providerVariationCode !== (variationCode || null) ||
+            replay.customerIdentifier !== maskedIdentifier ||
+            replay.customerIdentifierHash !== customerIdentifierHash ||
+            Math.abs(Number(replay.amount) - Number(dto.amount)) > 0.001
+          ) {
+            throw new BadRequestException('This idempotency key was already used for a different bill purchase.');
+          }
+          return this.receipt(replay);
+        }
       }
       throw error;
     }
