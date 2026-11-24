@@ -95,7 +95,7 @@ export class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
         api_key: apiKey,
         to: phone,
         from: senderId,
-        sms: `Your ZannyPay verification code is ${code}. It expires in 10 minutes. Do not share it with anyone. If you did not request it, ignore this message.`,
+        sms: `Your ZannyPay ${messagePurpose} code is ${code}. It expires in 10 minutes. Do not share it with anyone. If you did not request it, ignore this message.`,
         type: 'plain',
         channel: process.env.TERMII_CHANNEL || 'dnd',
       }),
@@ -159,7 +159,10 @@ export class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
       await transporter.sendMail({
         from,
         to: target,
-        subject: 'Your ZannyPay verification code',
+        subject:
+          purpose === 'PIN_RESET'
+            ? 'Reset your ZannyPay PIN'
+            : 'Verify your ZannyPay email',
         text: `Your ZannyPay verification code is ${code}. It expires in 10 minutes. Do not share it with anyone. If you did not request it, ignore this email.`,
         html: `<p>Your ZannyPay verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>This code expires in 10 minutes. If you did not request it, ignore this email.</p>`,
       });
