@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   ForbiddenException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '@nestjs-modules/mailer';
@@ -25,6 +26,9 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class TransactionsService {
+  private hasBillerProvider(): boolean { return false; }
+  private hasAirtimeProvider(): boolean { return false; }
+
   // Reward points → naira conversion for bill/airtime purchases. Kept as a
   // single constant here rather than DB-configurable for now — it's a
   // conservative, low-stakes rate (a maximally engaged daily-check-in user
@@ -151,9 +155,17 @@ export class TransactionsService {
       pin,
       bank,
       note,
-      recipientName,
       idempotencyKey,
     } = transferDto;
+
+    // Explicit bank selection must never fall through to the internal
+    // account-number lookup. Outgoing payouts remain disabled until a real
+    // disbursement adapter is configured and reconciled.
+    if (bank && bank !== 'ZannyPay') {
+      throw new ServiceUnavailableException(
+        'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
+      );
+    }
 
     const existing = await this.findExistingByIdempotencyKey(
       userId,
@@ -205,10 +217,16 @@ export class TransactionsService {
 
         if (recipient) {
           // --- INTERNAL TRANSFER ---
-          await tx.wallet.update({
-            where: { userId: sender.id },
+          // Re-check funds in the UPDATE predicate itself. The earlier
+          // balance read is only for a friendly error; it is not a concurrency
+          // control because two requests can read the same available balance.
+          const debit = await tx.wallet.updateMany({
+            where: { userId: sender.id, balance: { gte: amount } },
             data: { balance: { decrement: amount } },
           });
+          if (debit.count !== 1) {
+            throw new BadRequestException('Insufficient funds.');
+          }
           await tx.wallet.update({
             where: { userId: recipient.id },
             data: { balance: { increment: amount } },
@@ -311,80 +329,11 @@ export class TransactionsService {
             senderName: sender.name,
           };
         } else {
-          // --- EXTERNAL TRANSFER ---
-          await tx.wallet.update({
-            where: { userId: sender.id },
-            data: { balance: { decrement: amount } },
-          });
-
-          const senderTx = await tx.transaction.create({
-            data: {
-              userId: sender.id,
-              type: 'debit',
-              category: 'transfer',
-              title: `Transfer to ${recipientName || recipientAccount}`,
-              subtitle: bank || 'External Bank',
-              amount,
-              bank,
-              status: 'completed',
-              reference: `TXN-${Date.now()}-EXT`,
-              recipientAccount,
-              idempotencyKey,
-            },
-          });
-
-          // The other side of this journal is a system clearing account,
-          // not a second customer — the actual payout to the external bank
-          // happens through a real payment rail this codebase doesn't
-          // integrate with yet (see the mock-integration notes elsewhere in
-          // this file); this clearing account is where that integration
-          // would settle against once it exists.
-          const senderWalletAccountExt =
-            await this.ledgerService.getOrCreateCustomerAccount(
-              LedgerAccountType.CUSTOMER_WALLET,
-              sender.id,
-              tx,
-            );
-          const externalClearingAccount =
-            await this.ledgerService.getOrCreateSystemAccount(
-              LedgerAccountType.SYSTEM_EXTERNAL_PAYOUT_CLEARING,
-              tx,
-            );
-          await this.ledgerService.postJournal(
-            tx,
-            [
-              {
-                accountId: senderWalletAccountExt.id,
-                direction: LedgerDirection.DEBIT,
-                amount,
-              },
-              {
-                accountId: externalClearingAccount.id,
-                direction: LedgerDirection.CREDIT,
-                amount,
-              },
-            ],
-            {
-              transactionId: senderTx.id,
-              memo: `External transfer to ${recipientAccount}`,
-            },
+          // Reject before touching the wallet: a clearing-account journal
+          // is not proof that an external bank received the funds.
+          throw new ServiceUnavailableException(
+            'External bank transfers are temporarily unavailable until a verified payout provider is connected.',
           );
-
-          this.mailerService
-            .sendMail({
-              to: sender.email,
-              subject: 'Debit Alert: External Transfer 💸',
-              html: `<div style="font-family:sans-serif; padding: 20px;"><h2>Transfer Processing</h2><p>You sent <strong>NGN ${amount}</strong> to account ${recipientAccount} at ${bank || 'an external bank'}.</p><p>Reference: ${senderTx.reference}</p></div>`,
-            })
-            .catch(console.error);
-
-          return {
-            success: true,
-            transactionId: senderTx.id,
-            senderTx,
-            isInternal: false,
-            recipientName: recipientName || recipientAccount,
-          };
         }
       });
     } catch (error) {
@@ -436,6 +385,88 @@ export class TransactionsService {
     });
 
     return { success: true, transactionId: result.transactionId };
+  }
+
+  private paystackAuthHeaders() {
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+    if (!secret) {
+      throw new ServiceUnavailableException(
+        'Bank account verification is not configured.',
+      );
+    }
+    return { Authorization: `Bearer ${secret}` };
+  }
+
+  async listPaystackBanks() {
+    let response: Response;
+    let payload: any;
+    try {
+      response = await fetch('https://api.paystack.co/bank?currency=NGN&perPage=100', {
+        headers: this.paystackAuthHeaders(),
+      });
+      payload = await response.json();
+    } catch {
+      throw new ServiceUnavailableException(
+        'Could not reach the bank directory. Please try again.',
+      );
+    }
+    if (!response.ok || !payload?.status || !Array.isArray(payload.data)) {
+      throw new ServiceUnavailableException(
+        'The bank directory is temporarily unavailable.',
+      );
+    }
+    return {
+      banks: payload.data
+        .filter((bank: any) => bank?.active && bank?.code && bank?.name)
+        .map((bank: any) => ({
+          name: String(bank.name),
+          code: String(bank.code),
+        })),
+    };
+  }
+
+  async resolvePaystackBankAccount(accountNumber: string, bankCode: string) {
+    const account = String(accountNumber || '').trim();
+    const code = String(bankCode || '').trim();
+    if (!/^\d{10}$/.test(account)) {
+      throw new BadRequestException('Enter a valid 10-digit bank account number.');
+    }
+    if (!/^\d{2,8}$/.test(code)) {
+      throw new BadRequestException('Select a valid destination bank.');
+    }
+
+    let response: Response;
+    let payload: any;
+    try {
+      const url = new URL('https://api.paystack.co/bank/resolve');
+      url.searchParams.set('account_number', account);
+      url.searchParams.set('bank_code', code);
+      response = await fetch(url.toString(), {
+        headers: this.paystackAuthHeaders(),
+      });
+      payload = await response.json();
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof ServiceUnavailableException) {
+        throw error;
+      }
+      throw new ServiceUnavailableException(
+        'Could not verify this bank account right now. Please try again.',
+      );
+    }
+
+    if (!response.ok || !payload?.status || !payload?.data?.account_name) {
+      throw new BadRequestException(
+        payload?.message || 'We could not verify this account at the selected bank.',
+      );
+    }
+
+    return {
+      accountNumber: String(payload.data.account_number || account),
+      accountName: String(payload.data.account_name).trim(),
+      bankCode: code,
+      bankName: String(payload.data.bank_name || ''),
+      verified: true,
+    };
   }
 
   async fundWallet(userId: string, fundDto: FundDto) {
@@ -497,6 +528,12 @@ export class TransactionsService {
   }
 
   async payBill(userId: string, billDto: BillDto) {
+    // Fail closed until a real biller adapter can confirm fulfilment.
+    if (!this.hasBillerProvider()) {
+      throw new ServiceUnavailableException(
+        'Bill payments are temporarily unavailable until a verified biller provider is connected.',
+      );
+    }
     const {
       billerName,
       category,
@@ -636,6 +673,12 @@ export class TransactionsService {
   }
 
   async buyAirtime(userId: string, airtimeDto: AirtimeDto) {
+    // Fail closed until a real airtime/data adapter can confirm fulfilment.
+    if (!this.hasAirtimeProvider()) {
+      throw new ServiceUnavailableException(
+        'Airtime and data purchases are temporarily unavailable until a verified provider is connected.',
+      );
+    }
     const {
       phone,
       amount,
@@ -774,25 +817,64 @@ export class TransactionsService {
   }
   // whichever one fires first completes the transaction; the other is a
   // no-op thanks to the status check, so a payment is never credited twice.
-  private async completeFundingTransaction(reference: string) {
+  private async completeFundingTransaction(
+    reference: string,
+    providerData?: { amount: number; currency: string },
+  ) {
     const result = await this.prisma.$transaction(async (tx) => {
       const transaction = await tx.transaction.findUnique({
         where: { reference },
         include: { user: true },
       });
 
-      if (!transaction) return { success: false, status: 'not_found' as const };
-      if (transaction.status === 'completed')
+      if (
+        !transaction ||
+        transaction.category !== 'funding' ||
+        transaction.type !== 'credit'
+      ) {
+        return { success: false, status: 'not_found' as const };
+      }
+      if (transaction.status === 'completed') {
         return {
           success: true,
           status: 'completed' as const,
           alreadyProcessed: true,
         };
+      }
+      if (transaction.status !== 'pending') {
+        return { success: false, status: 'not_pending' as const };
+      }
 
-      await tx.transaction.update({
-        where: { reference },
+      // Validate provider-reported amount/currency against our pending
+      // funding instruction. Paystack amounts are in kobo; ledger values
+      // are naira. Never credit a mismatched or non-NGN charge.
+      if (
+        providerData &&
+        (providerData.currency !== 'NGN' ||
+          !Number.isSafeInteger(providerData.amount) ||
+          providerData.amount !== Math.round(Number(transaction.amount) * 100))
+      ) {
+        return { success: false, status: 'provider_amount_mismatch' as const };
+      }
+
+      // Compare-and-set is the concurrency guard: if webhook and browser
+      // verification race, only one transaction can move pending -> completed
+      // and credit the wallet. A replay must not create a second journal.
+      const claimed = await tx.transaction.updateMany({
+        where: { reference, category: 'funding', type: 'credit', status: 'pending' },
         data: { status: 'completed' },
       });
+      if (claimed.count !== 1) {
+        const current = await tx.transaction.findUnique({ where: { reference } });
+        if (current?.status === 'completed') {
+          return {
+            success: true,
+            status: 'completed' as const,
+            alreadyProcessed: true,
+          };
+        }
+        return { success: false, status: 'not_pending' as const };
+      }
       await tx.wallet.update({
         where: { userId: transaction.userId },
         data: { balance: { increment: transaction.amount } },
@@ -863,8 +945,11 @@ export class TransactionsService {
     };
   }
 
-  async handlePaystackWebhook(reference: string) {
-    const result = await this.completeFundingTransaction(reference);
+  async handlePaystackWebhook(
+    reference: string,
+    providerData: { amount: number; currency: string },
+  ) {
+    const result = await this.completeFundingTransaction(reference, providerData);
     return { handled: true, ...result };
   }
 
@@ -899,8 +984,11 @@ export class TransactionsService {
         verifyData.status &&
         verifyData.data?.status === 'success'
       ) {
-        const result = await this.completeFundingTransaction(reference);
-        return { success: true, status: result.status };
+        const result = await this.completeFundingTransaction(reference, {
+          amount: verifyData.data.amount,
+          currency: verifyData.data.currency,
+        });
+        return { success: result.success, status: result.status };
       }
 
       // Paystack hasn't confirmed success yet (still processing, or the

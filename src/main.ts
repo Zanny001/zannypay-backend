@@ -6,14 +6,25 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { json, urlencoded } from 'express';
 import { join } from 'path';
+import { assertProductionReadiness } from './config/production-readiness';
 
 async function bootstrap() {
+  // This codebase still contains mock-only KYC, sanctions and card-issuing
+  // adapters. Never expose those flows as a live-money production service.
+  assertProductionReadiness();
   // bodyParser: false lets us set a higher size limit below — the default
   // 100kb Express limit rejects a base64-encoded profile picture outright.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });
-  app.use(json({ limit: '6mb' }));
+  app.use(json({
+    limit: '6mb',
+    // Paystack signs the exact HTTP request bytes. Preserve them before
+    // JSON parsing; JSON.stringify(parsedBody) is not signature-equivalent.
+    verify: (req: any, _res, buffer) => {
+      req.rawBody = Buffer.from(buffer);
+    },
+  }));
   app.use(urlencoded({ extended: true, limit: '6mb' }));
 
   // Trust the first hop in front of this app (Render/Railway/Heroku/Nginx/
@@ -41,9 +52,14 @@ async function bootstrap() {
   // nothing on the money-movement endpoints, whose payloads are tiny.
   app.use(compression());
 
-  // Cross-Origin Resource Sharing (Allows your app to talk to the backend)
+  // In production, reflect only explicitly configured origins. In local
+  // development, reflect the request origin for convenience.
+  const corsOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: '*',
+    origin: corsOrigins.length ? corsOrigins : process.env.NODE_ENV === 'production' ? false : true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
