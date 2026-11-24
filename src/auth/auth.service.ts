@@ -198,7 +198,7 @@ export class AuthService {
   // code per flow, purpose-scoped verification).
   async requestOtp(dto: RequestOtpDto) {
     const isEmailPurpose = dto.purpose === OTP_PURPOSES.EMAIL_VERIFICATION;
-    if (isEmailPurpose && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(dto.target)) {
+    if (isEmailPurpose && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dto.target)) {
       throw new BadRequestException('A valid email address is required.');
     }
     if (!isEmailPurpose && dto.target.includes('@')) {
