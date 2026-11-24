@@ -30,7 +30,7 @@ describe('Paystack webhook signatures', () => {
 
   it('rejects timestamped signatures outside the five-minute replay window', () => {
     const timestamp = '1760270400';
-    const signature = crypto.createHmac('sha512', secret).update(timestamp).update('.').update(rawBody).digest('hex');
+    const signature = crypto.createHmac('sha512', signingSecret).update(timestamp).update('.').update(rawBody).digest('hex');
     expect(verifyPaystackSigningSecret(rawBody, `t=${timestamp},v1=whk_key:${signature}`, signingSecret, Number(timestamp) + 301)).toBe(false);
   });
 
