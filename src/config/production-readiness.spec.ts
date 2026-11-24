@@ -18,6 +18,7 @@ describe('production readiness guard', () => {
     expect(errors.join(' ')).toMatch(/KYC verification is wired to a mock provider/);
     expect(errors.join(' ')).toMatch(/Sanctions\/PEP screening is wired to a mock provider/);
     expect(errors.join(' ')).toMatch(/Card issuing is wired to a mock provider/);
+    expect(errors.join(' ')).toMatch(/External bank payouts, bill payments and airtime\/data fulfilment are not connected/);
     expect(() => assertProductionReadiness(productionEnv())).toThrow(/Refusing production startup/);
   });
 
