@@ -11,6 +11,7 @@ This is a source-level review of the supplied mobile v19 Ultra, admin v10 Ultra,
 - Backend key rotation: the supplied archive's paginated rotation sweep must enforce cursor progress to avoid a non-terminating maintenance run. The supplied archive adds a strict progress check and regression test.
 - Backend KYC and sanctions: the supplied modules wire mock providers; the mock KYC provider returns a passing liveness result. Production onboarding requires real contracted providers and documented manual-review handling.
 - Backend card issuing: the supplied module wires a mock card issuer. No production card-issuing adapter is established by this package.
+- Backend payout fulfilment: external bank transfers are currently recorded as completed against a clearing account without an actual bank payout adapter; bill and airtime/data flows contain provider-integration TODOs while recording successful local transactions. The production startup guard now explicitly blocks deployment until contracted rails, asynchronous fulfilment states, reversals and settlement reconciliation are implemented. These flows remain development/demo-only.
 - Backend storage and OTP: the supplied environment example includes local storage and mock/rollout settings. Production startup must reject mock providers, ephemeral local storage, missing secure secrets, and disabled mandatory OTP policy.
 - Admin: the BFF keeps the bearer token server-side in an httpOnly cookie; backend authorization remains the security boundary. E2E coverage is still required for login, 2FA, session revocation, role boundaries, privileged actions, reversals, exports, CSRF, and proxy allowlisting.
 
@@ -26,7 +27,7 @@ This is a source-level review of the supplied mobile v19 Ultra, admin v10 Ultra,
 2. Verify webhook signatures, timestamps, replay protection, idempotency and settlement-file reconciliation.
 3. Replace mock KYC/liveness, sanctions/PEP and card-issuing providers with real contracted integrations.
 4. Prove double-entry ledger invariants, atomic posting, dispute/chargeback lifecycle, reversals and daily reconciliation.
-5. Enforce production configuration at startup: no mock providers, no local ephemeral storage, mandatory OTP, strict CORS, rate-limit storage and managed secrets.
+5. Enforce production configuration at startup: no mock providers, no local ephemeral storage, mandatory OTP, strict CORS, rate-limit storage and managed secrets. External payouts, bills and airtime/data must not be exposed as completed transactions until real providers confirm fulfilment.
 6. Complete independent penetration testing, threat modelling, incident response, backup/restore, disaster recovery and key-rotation drills.
 
 ### Mobile
