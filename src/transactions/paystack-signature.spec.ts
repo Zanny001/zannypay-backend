@@ -36,8 +36,8 @@ describe('Paystack webhook signatures', () => {
 
   it('rejects malformed headers and altered raw bytes', () => {
     const timestamp = '1760270400';
-    const signature = crypto.createHmac('sha512', secret).update(timestamp).update('.').update(rawBody).digest('hex');
-    expect(verifyPaystackSigningSecret(rawBody, `t=x,v1=whk_key:${signature}`, secret, Number(timestamp))).toBe(false);
-    expect(verifyPaystackSigningSecret(Buffer.from('{}'), `t=${timestamp},v1=whk_key:${signature}`, secret, Number(timestamp))).toBe(false);
+    const signature = crypto.createHmac('sha512', signingSecret).update(timestamp).update('.').update(rawBody).digest('hex');
+    expect(verifyPaystackSigningSecret(rawBody, `t=x,v1=whk_key:${signature}`, signingSecret, Number(timestamp))).toBe(false);
+    expect(verifyPaystackSigningSecret(Buffer.from('{}'), `t=${timestamp},v1=whk_key:${signature}`, signingSecret, Number(timestamp))).toBe(false);
   });
 });
