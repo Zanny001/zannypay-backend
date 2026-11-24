@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
@@ -23,6 +24,14 @@ export class LoansService {
   ) {}
 
   async requestLoan(userId: string, amount: number, termDays: number = 30) {
+    // The current ledger-pool implementation has no real underwriting,
+    // credit decision, or confirmed lending-capital provider. Never create
+    // a production loan by minting wallet value against an internal pool.
+    if (process.env.NODE_ENV === 'production') {
+      throw new ServiceUnavailableException(
+        'Loan applications are not available yet. Lending approval and funding are not configured.',
+      );
+    }
     if (amount <= 0) throw new BadRequestException('Invalid loan amount.');
 
     const result = await this.prisma.$transaction(async (tx) => {
