@@ -1,24 +1,32 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { OtpService } from './otp.service';
-import { MockOtpDeliveryProvider } from './otp-delivery.provider';
+import {
+  ConfiguredOtpDeliveryProvider,
+  MockOtpDeliveryProvider,
+} from './otp-delivery.provider';
 import { OTP_DELIVERY_PROVIDER } from './otp.tokens';
 
-// Wires the delivery provider behind the OTP_DELIVERY_PROVIDER token.
-// Only the mock exists today — there is no real SMS/email vendor
-// credential configured — and the mock logs the code server-side instead
-// of delivering it. That is a reasonable, honest stand-in for local
-// development and CI, NOT something that should ship to production with
-// real users' phones on the other end: set OTP_DELIVERY_PROVIDER and
-// register a real vendor implementation (Termii, Africa's Talking, or
-// Twilio are the common Nigerian-market choices) before that.
 @Module({
   imports: [PrismaModule],
   providers: [
     OtpService,
+    ConfiguredOtpDeliveryProvider,
+    MockOtpDeliveryProvider,
     {
       provide: OTP_DELIVERY_PROVIDER,
-      useClass: MockOtpDeliveryProvider,
+      useFactory: (
+        configured: ConfiguredOtpDeliveryProvider,
+        mock: MockOtpDeliveryProvider,
+      ) => {
+        // Never allow a production deployment to silently log OTPs instead
+        // of delivering them. Missing credentials now produce a safe 503.
+        if (process.env.NODE_ENV === 'production') return configured;
+        return process.env.OTP_DELIVERY_PROVIDER === 'termii'
+          ? configured
+          : mock;
+      },
+      inject: [ConfiguredOtpDeliveryProvider, MockOtpDeliveryProvider],
     },
   ],
   exports: [OtpService],
