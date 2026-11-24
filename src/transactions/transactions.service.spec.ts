@@ -8,8 +8,9 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { BeneficiariesService } from '../beneficiaries/beneficiaries.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { AnalyticsService } from '../analytics/analytics.service';
-jest.mock('bcrypt', () => ({ compare: jest.fn().mockResolvedValue(true) }));
 import * as bcrypt from 'bcrypt';
+
+jest.mock('bcrypt', () => ({ compare: jest.fn().mockResolvedValue(true) }));
 
 describe('TransactionsService', () => {
   let service: TransactionsService;
