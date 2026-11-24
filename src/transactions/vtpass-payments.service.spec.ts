@@ -19,12 +19,13 @@ describe('VtpassPaymentsService', () => {
       purchase: jest.fn(),
       requery: jest.fn(),
     };
+    prisma = {};
+    ledger = { reverseJournal: jest.fn() };
     service = new VtpassPaymentsService(
-      {} as PrismaService,
-      {} as LedgerService,
+      prisma as PrismaService,
+      ledger as LedgerService,
       vtpass as unknown as VtpassClient,
-    );
-  });
+    );  });
 
   it('classifies delivered transactions as completed', () => {
     expect((service as any).responseState({
