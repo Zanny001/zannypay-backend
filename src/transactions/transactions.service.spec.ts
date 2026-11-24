@@ -42,6 +42,18 @@ describe('TransactionsService', () => {
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
+  it('rejects bill payments before any database or wallet mutation without a biller adapter', async () => {
+    await expect(service.payBill('user-1', {} as any)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
+
+  it('rejects airtime and data purchases before any database or wallet mutation without a provider', async () => {
+    await expect(
+      service.buyAirtime('user-1', {} as any),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
   it('rejects external bank transfers before any database or wallet mutation', async () => {
     await expect(
       service.transferFunds('user-1', {
