@@ -72,7 +72,9 @@ export class IntegrationStatusService {
         ),
         airtimeDataAndBills: status(
           false,
-          'No live biller/airtime fulfilment adapter is integrated.',
+          env.VTPASS_API_KEY && env.VTPASS_PUBLIC_KEY && env.VTPASS_SECRET_KEY
+            ? 'VTpass sandbox client is being prepared. Credentials being present does not prove authentication, service validation, transaction settlement, or production approval. Customer bill payments remain disabled.'
+            : 'Configure VTPASS_API_KEY, VTPASS_PUBLIC_KEY and VTPASS_SECRET_KEY for sandbox integration. Customer bill payments remain disabled.',
           true,
         ),
         loans: status(
