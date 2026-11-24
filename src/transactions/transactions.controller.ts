@@ -12,6 +12,7 @@ import {
 import type { Response } from 'express';
 import { TransactionsService } from './transactions.service';
 import { VtpassClient } from './vtpass.client';
+import { VtpassCustomerVerifyDto } from './dto/vtpass-customer-verify.dto';
 import { TransferDto } from './dto/transfer.dto';
 import { FundDto } from './dto/fund.dto';
 import { BillDto } from './dto/bill.dto';
@@ -38,6 +39,17 @@ export class TransactionsController {
   @Get('bill-services/:serviceId/variations')
   async listBillServiceVariations(@Param('serviceId') serviceId: string) {
     return this.vtpassClient.getServiceVariations(serviceId);
+  }
+
+  // Customer/account validation only; this does not debit a wallet or buy a product.
+  @UseGuards(JwtAuthGuard)
+  @Post('bill-verify')
+  async verifyBillCustomer(@Body() payload: VtpassCustomerVerifyDto) {
+    return this.vtpassClient.verifyCustomer({
+      serviceID: payload.serviceID,
+      billersCode: payload.billersCode.trim(),
+      ...(payload.type ? { type: payload.type.trim() } : {}),
+    });
   }
 
   @UseGuards(JwtAuthGuard)
