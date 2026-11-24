@@ -81,7 +81,8 @@ export class VtpassPaymentsService {
     }
 
     const productType = String(service.product_type || '').toLowerCase();
-    if (!variationCode && (this.requiresMerchantVerification(serviceID) || productType === 'variation')) {
+    const variationCategories = ['data', 'tv', 'tv-subscription', 'internet', 'education', 'insurance'];
+    if (!variationCode && (this.requiresMerchantVerification(serviceID) || variationCategories.includes(identifier.toLowerCase()) || productType === 'variation')) {
       throw new BadRequestException('Select a product variation before continuing.');
     }
 
