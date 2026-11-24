@@ -107,6 +107,7 @@ export class AuthService {
         balance: newUser.wallet.balance,
         referralCode: newUser.referralCode,
         kycTier: newUser.kycTier,
+        emailVerified: newUser.emailVerified,
       },
     };
   }
@@ -208,11 +209,33 @@ export class AuthService {
         return { sent: true, expiresInSeconds: 600 };
       }
     }
+
+    if (dto.purpose === OTP_PURPOSES.EMAIL_VERIFICATION) {
+      const user = await this.prisma.user.findUnique({
+        where: { email: dto.target.toLowerCase() },
+      });
+      if (!user) {
+        return { sent: true, expiresInSeconds: 600 };
+      }
+    }
+
     return this.otpService.requestCode(dto.target, dto.purpose);
   }
 
   async verifyOtp(dto: VerifyOtpDto) {
     await this.otpService.verifyCode(dto.target, dto.purpose, dto.code);
+
+    if (dto.purpose === OTP_PURPOSES.EMAIL_VERIFICATION) {
+      const user = await this.prisma.user.findUnique({
+        where: { email: dto.target.toLowerCase() },
+      });
+      if (!user) throw new NotFoundException('Email address not found.');
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerified: true },
+      });
+    }
+
     return { verified: true };
   }
 
