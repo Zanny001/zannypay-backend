@@ -92,6 +92,19 @@ describe('TransactionsService', () => {
     expect(tx.transaction.create).not.toHaveBeenCalled();
     (bcrypt.compare as jest.Mock).mockReset().mockResolvedValue(true);
   });
+  it('rejects an explicitly selected external bank before any internal transfer lookup', async () => {
+    await expect(
+      service.transferFunds('user-1', {
+        recipientAccount: '0000000001',
+        amount: 1000,
+        pin: '1234',
+        bank: 'GTBank',
+        bankCode: '058',
+      } as any),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('rejects malformed bank account numbers before calling Paystack', async () => {
     const fetchSpy = jest.spyOn(globalThis, 'fetch');
     await expect(
