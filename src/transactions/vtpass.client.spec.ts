@@ -72,7 +72,7 @@ describe('VtpassClient', () => {
   });
 
   it('rejects malformed service identifiers before making a request', async () => {
-    await expect(new VtpassClient().getServices('../pay')).rejects.toThrow(
+    expect(() => new VtpassClient().getServices('../pay')).toThrow(
       'Invalid VTpass service category.',
     );
     expect(global.fetch).not.toHaveBeenCalled();
