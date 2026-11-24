@@ -77,6 +77,10 @@ export class VtpassClient {
     }
   }
 
+  assertPurchaseConfigured() {
+    this.credentials('POST');
+  }
+
   getServices(identifier: string) {
     if (!/^[a-z][a-z0-9-]{1,30}$/i.test(identifier)) {
       throw new ServiceUnavailableException('Invalid VTpass service category.');
