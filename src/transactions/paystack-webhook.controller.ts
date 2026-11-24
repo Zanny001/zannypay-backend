@@ -42,7 +42,12 @@ export class PaystackWebhookController {
       if (typeof reference !== 'string' || reference.length === 0) {
         throw new BadRequestException('Paystack charge reference is missing.');
       }
-      const amount = body.data?.amount;\n      const currency = body.data?.currency;\n      if (!Number.isSafeInteger(amount) || amount <= 0 || currency !== 'NGN') {\n        throw new BadRequestException('Paystack charge amount or currency is invalid.');\n      }\n      await this.transactionsService.handlePaystackWebhook(reference, { amount, currency });
+      const amount = body.data?.amount;
+      const currency = body.data?.currency;
+      if (!Number.isSafeInteger(amount) || amount <= 0 || currency !== 'NGN') {
+        throw new BadRequestException('Paystack charge amount or currency is invalid.');
+      }
+      await this.transactionsService.handlePaystackWebhook(reference, { amount, currency });
     }
 
     return res.status(200).send('Event Acknowledged');
