@@ -817,7 +817,6 @@ export class TransactionsService {
 
     if (
       result.success &&
-      !result.alreadyProcessed &&
       'transaction' in result &&
       result.transaction
     ) {
