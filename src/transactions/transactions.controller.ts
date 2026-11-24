@@ -160,7 +160,7 @@ export class TransactionsController {
           <p style="font-size:15px;color:#596579;line-height:1.6;margin:0 0 24px;">Your checkout has ended. ZannyPay will securely verify the payment before updating your wallet. This page does not confirm that a payment succeeded.</p>
           <a href="${safeReturnUrl}" style="display:block;background:#2458d3;color:#fff;text-decoration:none;padding:15px;border-radius:12px;font-weight:700;">Return to app</a>
         </main>
-        <script>setTimeout(function(){ window.location.href = "${safeReturnUrl}"; }, 700);</script>
+        <script>setTimeout(function(){ window.location.href = ${scriptReturnUrl}; }, 700);</script>
       </body>
       </html>
     `;
