@@ -117,7 +117,11 @@ export class VtpassPaymentsService {
     const variationCode = dto.variation_code.trim();
     const billersCode = dto.billersCode.trim();
     const idempotencyKey = `${userId}:${dto.idempotencyKey}`;
-    const hmacSecret = process.env.JWT_SECRET;\n    if (!hmacSecret) {\n      throw new ServiceUnavailableException('Bill payment security configuration is incomplete.');\n    }\n    const customerIdentifierHash = createHmac('sha256', hmacSecret).update(billersCode).digest('hex');
+    const hmacSecret = process.env.JWT_SECRET;
+    if (!hmacSecret) {
+      throw new ServiceUnavailableException('Bill payment security configuration is incomplete.');
+    }
+    const customerIdentifierHash = createHmac('sha256', hmacSecret).update(billersCode).digest('hex');
     const existing = await this.prisma.transaction.findFirst({
       where: { userId, idempotencyKey },
     });
