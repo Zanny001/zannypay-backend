@@ -7,6 +7,7 @@ export const Cron = () => (
 ) => descriptor;
 
 export const CronExpression = {
+  EVERY_MINUTE: '* * * * *',
   EVERY_HOUR: '0 * * * *',
   EVERY_DAY_AT_1AM: '0 1 * * *',
   EVERY_DAY_AT_3AM: '0 3 * * *',
