@@ -14,6 +14,12 @@ This is a source-level review of the supplied mobile v19 Ultra, admin v10 Ultra,
 - Backend storage and OTP: the supplied environment example includes local storage and mock/rollout settings. Production startup must reject mock providers, ephemeral local storage, missing secure secrets, and disabled mandatory OTP policy.
 - Admin: the BFF keeps the bearer token server-side in an httpOnly cookie; backend authorization remains the security boundary. E2E coverage is still required for login, 2FA, session revocation, role boundaries, privileged actions, reversals, exports, CSRF, and proxy allowlisting.
 
+## Engineering-branch remediations added after the initial source audit
+- Paystack webhook HMAC validation now uses the preserved raw HTTP request body, not a re-serialized JSON object.
+- Webhook processing rejects missing secrets, malformed signatures, missing references, non-NGN charges and invalid kobo amounts.
+- Funding completion now claims only a pending funding credit with a conditional database update and checks the provider amount against the locally initiated amount before wallet crediting. This is intended to make webhook delivery and browser-return verification safe to race; the exact database concurrency behavior still requires integration testing against the deployed PostgreSQL version.
+- Added focused tests for exact-byte HMAC verification, malformed signatures and absent secrets. GitHub Actions is validating the complete backend suite/build/lint on this branch.
+
 ## Required production-readiness work
 ### Backend
 1. Integrate licensed payment rails for funding, transfers, bills, refunds, reversals, settlement and reconciliation.
