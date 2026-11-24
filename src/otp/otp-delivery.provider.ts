@@ -120,8 +120,7 @@ export class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
     // message_id. Treat other codes as failures; do not reject valid sends.
     if (
       (result.code && result.code.toLowerCase() !== 'ok') ||
-      (!result.message_id &&
-        !result.message?.toLowerCase().includes('success'))
+      (!result.message_id && !result.message?.toLowerCase().includes('success'))
     ) {
       this.logger.error('Termii did not confirm SMS acceptance');
       throw new ServiceUnavailableException(
