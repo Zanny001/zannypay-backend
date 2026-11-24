@@ -40,7 +40,7 @@ describe('IntegrationStatusService', () => {
     const result = new IntegrationStatusService().getStatus();
     expect(result.integrations.phoneOtp.configured).toBe(true);
     expect(result.integrations.emailVerification.configured).toBe(true);
-    expect(result.integrations.externalBankPayouts.configured).toBe(true);
+    expect(result.integrations.externalBankPayouts.status).toBe('not_integrated');
     expect(result.disclaimer).toContain('does not prove');
   });
 });
