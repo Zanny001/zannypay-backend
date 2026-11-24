@@ -172,7 +172,8 @@ export class VtpassPaymentsService {
             providerStatus: 'initiated',
             providerServiceId: serviceID,
             providerVariationCode: variationCode,
-            customerIdentifier: `••••${billersCode.slice(-4)}`,\n            customerIdentifierHash,
+            customerIdentifier: `••••${billersCode.slice(-4)}`,
+            customerIdentifierHash,
           },
         });
 
