@@ -83,7 +83,7 @@ describe('VtpassPaymentsService', () => {
     });
     expect(prisma.transaction.updateMany).toHaveBeenCalledWith({
       where: { id: 'txn-1', status: 'pending' },
-      data: { providerStatus: 'pending' },
+      data: expect.objectContaining({ providerStatus: 'pending', providerLastCheckedAt: expect.any(Date) }),
     });
     expect(prisma.wallet).toBeUndefined();
   });
