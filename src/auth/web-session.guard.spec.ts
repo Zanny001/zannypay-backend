@@ -14,7 +14,8 @@ describe('WebSessionGuard', () => {
   beforeEach(() => {
     sessions = { authenticate: jest.fn() };
     guard = new WebSessionGuard(sessions as any);
-    process.env.CORS_ORIGINS = 'https://app.example.test,https://preview.example.test';
+    process.env.CORS_ORIGINS =
+      'https://app.example.test,https://preview.example.test';
   });
 
   afterEach(() => {
@@ -22,7 +23,10 @@ describe('WebSessionGuard', () => {
   });
 
   it('defers to the existing bearer-token guards when no browser cookie exists', async () => {
-    const request = { headers: { authorization: 'Bearer native-token' }, method: 'GET' };
+    const request = {
+      headers: { authorization: 'Bearer native-token' },
+      method: 'GET',
+    };
 
     await expect(guard.canActivate(makeContext(request))).resolves.toBe(true);
 
@@ -60,13 +64,16 @@ describe('WebSessionGuard', () => {
 
   it('rejects state-changing cookie requests without an allowed Origin', async () => {
     const request = {
-      headers: { cookie: 'zannypay_session=opaque-secret', origin: 'https://evil.example' },
+      headers: {
+        cookie: 'zannypay_session=opaque-secret',
+        origin: 'https://evil.example',
+      },
       method: 'POST',
     };
 
-    await expect(guard.canActivate(makeContext(request))).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(
+      guard.canActivate(makeContext(request)),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(sessions.authenticate).not.toHaveBeenCalled();
   });
 
