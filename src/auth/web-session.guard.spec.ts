@@ -36,7 +36,7 @@ describe('WebSessionGuard', () => {
       userId: 'user-1',
     });
     const request = {
-      headers: { cookie: 'other=value; zannypay_web_session=opaque%2Bsecret' },
+      headers: { cookie: 'other=value; zannypay_session=opaque%2Bsecret' },
       method: 'GET',
     };
 
@@ -49,7 +49,7 @@ describe('WebSessionGuard', () => {
   it('does not authenticate an invalid or expired browser cookie', async () => {
     sessions.authenticate.mockResolvedValue(null);
     const request = {
-      headers: { cookie: 'zannypay_web_session=expired-secret' },
+      headers: { cookie: 'zannypay_session=expired-secret' },
       method: 'GET',
     };
 
@@ -60,7 +60,7 @@ describe('WebSessionGuard', () => {
 
   it('rejects state-changing cookie requests without an allowed Origin', async () => {
     const request = {
-      headers: { cookie: 'zannypay_web_session=opaque-secret', origin: 'https://evil.example' },
+      headers: { cookie: 'zannypay_session=opaque-secret', origin: 'https://evil.example' },
       method: 'POST',
     };
 
@@ -77,7 +77,7 @@ describe('WebSessionGuard', () => {
     });
     const request = {
       headers: {
-        cookie: 'zannypay_web_session=opaque-secret',
+        cookie: 'zannypay_session=opaque-secret',
         origin: 'https://app.example.test',
       },
       method: 'POST',
@@ -95,7 +95,7 @@ describe('WebSessionGuard', () => {
       userId: 'user-1',
     });
     const request = {
-      headers: { cookie: 'zannypay_web_session=opaque-secret' },
+      headers: { cookie: 'zannypay_session=opaque-secret' },
       method: 'GET',
     };
 
