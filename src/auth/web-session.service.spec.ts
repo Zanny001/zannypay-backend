@@ -1,10 +1,15 @@
 import { createHash } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { WebSessionService } from './web-session.service';
 
 describe('WebSessionService', () => {
+  const tx = {
+    $queryRaw: jest.fn(),
+    webSession: { create: jest.fn() },
+  };
   const prisma = {
+    $transaction: jest.fn(),
     webSession: {
-      create: jest.fn(),
       findUnique: jest.fn(),
       updateMany: jest.fn(),
     },
@@ -16,18 +21,22 @@ describe('WebSessionService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    tx.$queryRaw.mockResolvedValue([
+      { id: 'user-1', pin: 'unused-hash', deletedAt: null },
+    ]);
+    prisma.$transaction.mockImplementation((callback) => callback(tx));
     service = new WebSessionService(prisma as any, jwtService as any);
   });
 
   it('stores only a hash of a random browser session secret', async () => {
-    prisma.webSession.create.mockResolvedValue({});
+    tx.webSession.create.mockResolvedValue({});
     const result = await service.create('user-1', {
       headers: { 'user-agent': 'test-browser' },
       ip: '127.0.0.1',
     });
 
     expect(result.token).toHaveLength(43);
-    expect(prisma.webSession.create).toHaveBeenCalledWith({
+    expect(tx.webSession.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: 'user-1',
         tokenHash: createHash('sha256').update(result.token).digest('hex'),
@@ -36,7 +45,7 @@ describe('WebSessionService', () => {
         expiresAt: expect.any(Date),
       }),
     });
-    expect(prisma.webSession.create.mock.calls[0][0].data.tokenHash).not.toBe(
+    expect(tx.webSession.create.mock.calls[0][0].data.tokenHash).not.toBe(
       result.token,
     );
   });
