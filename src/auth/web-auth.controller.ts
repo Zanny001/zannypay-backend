@@ -61,6 +61,7 @@ export class WebAuthController {
     const result = await this.authService.signup(body);
     const session = await this.sessions.create(result.user.id, request);
     this.setCookie(response, session.token);
+    response.setHeader('Cache-Control', 'no-store');
     return { user: result.user, expiresAt: session.expiresAt };
   }
 
