@@ -157,14 +157,8 @@ export class TransactionsService {
   }
 
   async transferFunds(userId: string, transferDto: TransferDto) {
-    const {
-      recipientAccount,
-      amount,
-      pin,
-      bank,
-      note,
-      idempotencyKey,
-    } = transferDto;
+    const { recipientAccount, amount, pin, bank, note, idempotencyKey } =
+      transferDto;
 
     // Never allow an explicitly selected external bank to fall through to
     // the internal ZannyPay account lookup. The production main branch does
@@ -407,9 +401,12 @@ export class TransactionsService {
     let response: Response;
     let payload: any;
     try {
-      response = await fetch('https://api.paystack.co/bank?currency=NGN&perPage=100', {
-        headers: this.paystackAuthHeaders(),
-      });
+      response = await fetch(
+        'https://api.paystack.co/bank?currency=NGN&perPage=100',
+        {
+          headers: this.paystackAuthHeaders(),
+        },
+      );
       payload = await response.json();
     } catch {
       throw new ServiceUnavailableException(
@@ -435,7 +432,9 @@ export class TransactionsService {
     const account = String(accountNumber || '').trim();
     const code = String(bankCode || '').trim();
     if (!/^\d{10}$/.test(account)) {
-      throw new BadRequestException('Enter a valid 10-digit bank account number.');
+      throw new BadRequestException(
+        'Enter a valid 10-digit bank account number.',
+      );
     }
     if (!/^\d{2,8}$/.test(code)) {
       throw new BadRequestException('Select a valid destination bank.');
@@ -452,7 +451,10 @@ export class TransactionsService {
       });
       payload = await response.json();
     } catch (error) {
-      if (error instanceof BadRequestException || error instanceof ServiceUnavailableException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ServiceUnavailableException
+      ) {
         throw error;
       }
       throw new ServiceUnavailableException(
@@ -462,7 +464,8 @@ export class TransactionsService {
 
     if (!response.ok || !payload?.status || !payload?.data?.account_name) {
       throw new BadRequestException(
-        payload?.message || 'We could not verify this account at the selected bank.',
+        payload?.message ||
+          'We could not verify this account at the selected bank.',
       );
     }
 
@@ -485,7 +488,9 @@ export class TransactionsService {
       !Number.isSafeInteger(amountInKobo) ||
       Math.abs(amountInKobo / 100 - amount) > 0.000001
     ) {
-      throw new BadRequestException('Enter a valid funding amount with up to two decimal places.');
+      throw new BadRequestException(
+        'Enter a valid funding amount with up to two decimal places.',
+      );
     }
 
     const secret = process.env.PAYSTACK_SECRET_KEY;
@@ -515,10 +520,18 @@ export class TransactionsService {
           existing.type !== 'credit' ||
           Number(existing.amount) !== amount
         ) {
-          throw new BadRequestException('This payment attempt key is already associated with another request.');
+          throw new BadRequestException(
+            'This payment attempt key is already associated with another request.',
+          );
         }
         if (existing.status === 'completed') {
-          return { success: true, status: 'completed', reference: existing.reference, amount: Number(existing.amount), replayed: true };
+          return {
+            success: true,
+            status: 'completed',
+            reference: existing.reference,
+            amount: Number(existing.amount),
+            replayed: true,
+          };
         }
         if (existing.status === 'pending') {
           return {
@@ -526,11 +539,14 @@ export class TransactionsService {
             status: 'pending',
             reference: existing.reference,
             amount: Number(existing.amount),
-            message: 'This payment attempt is already being processed. Check its status before starting another payment.',
+            message:
+              'This payment attempt is already being processed. Check its status before starting another payment.',
             replayed: true,
           };
         }
-        throw new BadRequestException('This payment attempt has already failed. Start a new funding attempt.');
+        throw new BadRequestException(
+          'This payment attempt has already failed. Start a new funding attempt.',
+        );
       }
     }
 
@@ -555,8 +571,15 @@ export class TransactionsService {
     } catch (error) {
       // Concurrent retries can race the unique idempotencyKey constraint.
       if (error?.code === 'P2002' && idempotencyKey) {
-        const existing = await this.prisma.transaction.findUnique({ where: { idempotencyKey } });
-        if (existing && existing.userId === userId && existing.category === 'funding' && Number(existing.amount) === amount) {
+        const existing = await this.prisma.transaction.findUnique({
+          where: { idempotencyKey },
+        });
+        if (
+          existing &&
+          existing.userId === userId &&
+          existing.category === 'funding' &&
+          Number(existing.amount) === amount
+        ) {
           return {
             success: existing.status === 'completed',
             status: existing.status,
@@ -577,21 +600,24 @@ export class TransactionsService {
     let paystackResponse: Response;
     let resData: any;
     try {
-      paystackResponse = await fetch('https://api.paystack.co/transaction/initialize', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${secret}`,
-          'Content-Type': 'application/json',
+      paystackResponse = await fetch(
+        'https://api.paystack.co/transaction/initialize',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${secret}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: user.email,
+            amount: amountInKobo,
+            currency: 'NGN',
+            reference,
+            callback_url: callbackUrl,
+          }),
+          signal: AbortSignal.timeout(15000),
         },
-        body: JSON.stringify({
-          email: user.email,
-          amount: amountInKobo,
-          currency: 'NGN',
-          reference,
-          callback_url: callbackUrl,
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
+      );
       resData = await paystackResponse.json();
     } catch {
       // The provider may have accepted the request even though our response
@@ -601,16 +627,23 @@ export class TransactionsService {
         status: 'pending',
         reference,
         amount,
-        message: 'Payment setup is taking longer than expected. Check this reference before trying again.',
+        message:
+          'Payment setup is taking longer than expected. Check this reference before trying again.',
       };
     }
 
-    if (!paystackResponse.ok || !resData?.status || !resData?.data?.authorization_url) {
+    if (
+      !paystackResponse.ok ||
+      !resData?.status ||
+      !resData?.data?.authorization_url
+    ) {
       await this.prisma.transaction.updateMany({
         where: { id: txn.id, status: 'pending' },
         data: { status: 'failed' },
       });
-      throw new BadRequestException(resData?.message || 'Paystack could not initialize this payment.');
+      throw new BadRequestException(
+        resData?.message || 'Paystack could not initialize this payment.',
+      );
     }
 
     return {
@@ -963,7 +996,9 @@ export class TransactionsService {
         data: { status: 'completed' },
       });
       if (claimed.count !== 1) {
-        const current = await tx.transaction.findUnique({ where: { reference } });
+        const current = await tx.transaction.findUnique({
+          where: { reference },
+        });
         if (current?.status === 'completed') {
           return {
             success: true,
@@ -1017,27 +1052,28 @@ export class TransactionsService {
       return { success: true, status: 'completed' as const, transaction };
     });
 
-    if (
-      result.success &&
-      'transaction' in result &&
-      result.transaction
-    ) {
+    if (result.success && 'transaction' in result && result.transaction) {
       // The wallet credit and journal are already committed atomically.
       // Do not hold Paystack's webhook acknowledgement open for ancillary
       // fraud/analytics work; failures are logged and can be reconciled.
       void this.runFraudCheck(result.transaction).catch((error) =>
         console.error('Post-funding fraud check failed:', error),
       );
-      void this.analyticsService.track(ANALYTICS_EVENTS.WALLET_FUNDED, {
-        userId: result.transaction.userId,
-        properties: { amount: Number(result.transaction.amount) },
-      }).catch((error) => console.error('Wallet-funded analytics failed:', error));
+      void this.analyticsService
+        .track(ANALYTICS_EVENTS.WALLET_FUNDED, {
+          userId: result.transaction.userId,
+          properties: { amount: Number(result.transaction.amount) },
+        })
+        .catch((error) =>
+          console.error('Wallet-funded analytics failed:', error),
+        );
     }
 
     return {
       success: result.success,
       status: result.status,
-      alreadyProcessed: 'alreadyProcessed' in result ? result.alreadyProcessed : false,
+      alreadyProcessed:
+        'alreadyProcessed' in result ? result.alreadyProcessed : false,
     };
   }
 
@@ -1045,7 +1081,10 @@ export class TransactionsService {
     reference: string,
     providerData: { amount: number; currency: string },
   ) {
-    const result = await this.completeFundingTransaction(reference, providerData);
+    const result = await this.completeFundingTransaction(
+      reference,
+      providerData,
+    );
     return { handled: true, ...result };
   }
 
@@ -1058,7 +1097,11 @@ export class TransactionsService {
     const localTxn = await this.prisma.transaction.findFirst({
       where: { reference, userId },
     });
-    if (!localTxn || localTxn.category !== 'funding' || localTxn.type !== 'credit') {
+    if (
+      !localTxn ||
+      localTxn.category !== 'funding' ||
+      localTxn.type !== 'credit'
+    ) {
       throw new NotFoundException('Funding transaction not found.');
     }
 

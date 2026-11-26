@@ -18,8 +18,7 @@ export class VtpassClient {
     const { VTPASS_API_KEY, VTPASS_PUBLIC_KEY, VTPASS_SECRET_KEY } =
       process.env;
     const missingGetCredentials = !VTPASS_API_KEY || !VTPASS_PUBLIC_KEY;
-    const missingPostCredentials =
-      !VTPASS_API_KEY || !VTPASS_SECRET_KEY;
+    const missingPostCredentials = !VTPASS_API_KEY || !VTPASS_SECRET_KEY;
     if (method === 'GET' ? missingGetCredentials : missingPostCredentials) {
       throw new ServiceUnavailableException(
         'VTpass sandbox credentials for this request are not fully configured.',
@@ -61,19 +60,27 @@ export class VtpassClient {
           'VTpass did not respond in time. The transaction must be checked before retrying.',
         );
       }
-      this.logger.warn(`VTpass network error on ${path}: ${error instanceof Error ? error.name : 'unknown'}`);
-      throw new ServiceUnavailableException('VTpass is temporarily unreachable.');
+      this.logger.warn(
+        `VTpass network error on ${path}: ${error instanceof Error ? error.name : 'unknown'}`,
+      );
+      throw new ServiceUnavailableException(
+        'VTpass is temporarily unreachable.',
+      );
     }
 
     if (!response.ok) {
       this.logger.warn(`VTpass returned HTTP ${response.status} for ${path}`);
-      throw new ServiceUnavailableException('VTpass could not process the request.');
+      throw new ServiceUnavailableException(
+        'VTpass could not process the request.',
+      );
     }
 
     try {
       return (await response.json()) as VtpassResponse;
     } catch {
-      throw new ServiceUnavailableException('VTpass returned an invalid response.');
+      throw new ServiceUnavailableException(
+        'VTpass returned an invalid response.',
+      );
     }
   }
 
@@ -93,9 +100,14 @@ export class VtpassClient {
 
   getServiceVariations(serviceId: string) {
     if (!/^[a-z0-9-]{2,80}$/i.test(serviceId)) {
-      throw new ServiceUnavailableException('Invalid VTpass service identifier.');
+      throw new ServiceUnavailableException(
+        'Invalid VTpass service identifier.',
+      );
     }
-    return this.request(`service-variations?serviceID=${encodeURIComponent(serviceId)}`, 'GET');
+    return this.request(
+      `service-variations?serviceID=${encodeURIComponent(serviceId)}`,
+      'GET',
+    );
   }
 
   verifyCustomer(payload: VtpassPayload) {

@@ -31,9 +31,7 @@ export class WebSessionGuard implements CanActivate {
     if (!token) return true;
 
     if (
-      !['GET', 'HEAD', 'OPTIONS'].includes(
-        String(request.method).toUpperCase()
-      )
+      !['GET', 'HEAD', 'OPTIONS'].includes(String(request.method).toUpperCase())
     ) {
       const origin = request.headers.origin;
       const allowed = (process.env.CORS_ORIGINS || '')

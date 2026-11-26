@@ -68,7 +68,9 @@ describe('VtpassClient', () => {
       ok: true,
       json: async () => ({ response_description: '000', content: [] }),
     });
-    await expect(new VtpassClient().getServices('airtime')).resolves.toBeDefined();
+    await expect(
+      new VtpassClient().getServices('airtime'),
+    ).resolves.toBeDefined();
   });
 
   it('rejects malformed service identifiers before making a request', async () => {
@@ -81,7 +83,10 @@ describe('VtpassClient', () => {
   it('loads product variations from the documented service-variations endpoint', async () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
-      json: async () => ({ response_description: '000', content: { variations: [] } }),
+      json: async () => ({
+        response_description: '000',
+        content: { variations: [] },
+      }),
     });
     await new VtpassClient().getServiceVariations('gotv');
     expect(global.fetch).toHaveBeenCalledWith(
@@ -91,7 +96,9 @@ describe('VtpassClient', () => {
   });
 
   it('generates a request ID with a Lagos timestamp prefix and unique suffix', () => {
-    const id = new VtpassClient().createRequestId(new Date('2026-11-24T18:25:00.000Z'));
+    const id = new VtpassClient().createRequestId(
+      new Date('2026-11-24T18:25:00.000Z'),
+    );
     expect(id).toMatch(/^202611241925[A-F0-9]{10}$/);
   });
 });

@@ -1,4 +1,12 @@
-import { IsNumber, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
+import {
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class FundDto {
   @IsNumber({ maxDecimalPlaces: 2 })

@@ -6,12 +6,19 @@ export function verifyPaystackSignature(
   signature: unknown,
   secret: string,
 ): boolean {
-  if (!secret || typeof signature !== 'string' || !/^[a-f0-9]{128}$/i.test(signature)) {
+  if (
+    !secret ||
+    typeof signature !== 'string' ||
+    !/^[a-f0-9]{128}$/i.test(signature)
+  ) {
     return false;
   }
   const expected = crypto.createHmac('sha512', secret).update(rawBody).digest();
   const supplied = Buffer.from(signature, 'hex');
-  return supplied.length === expected.length && crypto.timingSafeEqual(expected, supplied);
+  return (
+    supplied.length === expected.length &&
+    crypto.timingSafeEqual(expected, supplied)
+  );
 }
 
 /**
@@ -26,7 +33,12 @@ export function verifyPaystackSigningSecret(
   secret: string,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): boolean {
-  if (!secret?.startsWith('whsec_') || typeof header !== 'string' || header.length > 4096) return false;
+  if (
+    !secret?.startsWith('whsec_') ||
+    typeof header !== 'string' ||
+    header.length > 4096
+  )
+    return false;
 
   let timestamp: string | null = null;
   const signatures: string[] = [];
@@ -43,7 +55,10 @@ export function verifyPaystackSigningSecret(
       if (colon < 1) continue;
       const keyId = value.slice(0, colon);
       const signature = value.slice(colon + 1);
-      if (/^whk_[A-Za-z0-9_-]+$/.test(keyId) && /^[a-f0-9]{128}$/.test(signature)) {
+      if (
+        /^whk_[A-Za-z0-9_-]+$/.test(keyId) &&
+        /^[a-f0-9]{128}$/.test(signature)
+      ) {
         signatures.push(signature);
       }
     }
@@ -51,7 +66,11 @@ export function verifyPaystackSigningSecret(
 
   if (!timestamp || signatures.length === 0) return false;
   const timestampNumber = Number(timestamp);
-  if (!Number.isSafeInteger(timestampNumber) || Math.abs(nowSeconds - timestampNumber) > 300) return false;
+  if (
+    !Number.isSafeInteger(timestampNumber) ||
+    Math.abs(nowSeconds - timestampNumber) > 300
+  )
+    return false;
 
   const expected = crypto
     .createHmac('sha512', secret)
@@ -62,6 +81,9 @@ export function verifyPaystackSigningSecret(
 
   return signatures.some((signature) => {
     const supplied = Buffer.from(signature, 'hex');
-    return supplied.length === expected.length && crypto.timingSafeEqual(expected, supplied);
+    return (
+      supplied.length === expected.length &&
+      crypto.timingSafeEqual(expected, supplied)
+    );
   });
 }

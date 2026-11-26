@@ -1,4 +1,7 @@
-import { ServiceUnavailableException, BadRequestException } from '@nestjs/common';
+import {
+  ServiceUnavailableException,
+  BadRequestException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
@@ -7,7 +10,15 @@ import { VtpassPaymentsService } from './vtpass-payments.service';
 
 describe('VtpassPaymentsService', () => {
   let service: VtpassPaymentsService;
-  let vtpass: { getServices: jest.Mock; getServiceVariations: jest.Mock; verifyCustomer: jest.Mock; assertPurchaseConfigured: jest.Mock; createRequestId: jest.Mock; purchase: jest.Mock; requery: jest.Mock };
+  let vtpass: {
+    getServices: jest.Mock;
+    getServiceVariations: jest.Mock;
+    verifyCustomer: jest.Mock;
+    assertPurchaseConfigured: jest.Mock;
+    createRequestId: jest.Mock;
+    purchase: jest.Mock;
+    requery: jest.Mock;
+  };
   let prisma: any;
   let ledger: any;
 
@@ -27,18 +38,24 @@ describe('VtpassPaymentsService', () => {
       prisma as PrismaService,
       ledger as LedgerService,
       vtpass as unknown as VtpassClient,
-    );  });
+    );
+  });
 
   it('classifies delivered transactions as completed', () => {
-    expect((service as any).responseState({
-      code: '000',
-      content: { transactions: { status: 'delivered' } },
-    })).toBe('completed');
+    expect(
+      (service as any).responseState({
+        code: '000',
+        content: { transactions: { status: 'delivered' } },
+      }),
+    ).toBe('completed');
   });
 
-  it.each(['016', '040', '091'])('classifies definitive provider failure code %s as failed', (code) => {
-    expect((service as any).responseState({ code })).toBe('failed');
-  });
+  it.each(['016', '040', '091'])(
+    'classifies definitive provider failure code %s as failed',
+    (code) => {
+      expect((service as any).responseState({ code })).toBe('failed');
+    },
+  );
 
   it.each([
     { code: '099' },
@@ -59,88 +76,136 @@ describe('VtpassPaymentsService', () => {
     };
     vtpass.verifyCustomer.mockResolvedValueOnce({
       code: '000',
-      content: { Customer_Name: 'Sandbox Customer', MeterNumber: dto.billersCode },
+      content: {
+        Customer_Name: 'Sandbox Customer',
+        MeterNumber: dto.billersCode,
+      },
     });
-    await expect((service as any).verifyRequiredCustomer(dto)).resolves.toBeUndefined();
+    await expect(
+      (service as any).verifyRequiredCustomer(dto),
+    ).resolves.toBeUndefined();
 
     vtpass.verifyCustomer.mockResolvedValueOnce({ code: '020' });
-    await expect((service as any).verifyRequiredCustomer(dto)).resolves.toBeUndefined();
+    await expect(
+      (service as any).verifyRequiredCustomer(dto),
+    ).resolves.toBeUndefined();
 
     vtpass.verifyCustomer.mockResolvedValueOnce({ code: '030' });
-    await expect((service as any).verifyRequiredCustomer(dto)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      (service as any).verifyRequiredCustomer(dto),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('uses provider catalogue price rather than a client-supplied price', async () => {
     vtpass.getServices.mockResolvedValue({
-      content: [{
-        serviceID: 'test-service',
-        name: 'Test Service',
-        minimium_amount: '100',
-        maximum_amount: '10000',
-        product_type: 'fix',
-      }],
+      content: [
+        {
+          serviceID: 'test-service',
+          name: 'Test Service',
+          minimium_amount: '100',
+          maximum_amount: '10000',
+          product_type: 'fix',
+        },
+      ],
     });
     vtpass.getServiceVariations.mockResolvedValue({
       content: {
-        variations: [{
-          variation_code: 'monthly-1',
-          variation_amount: '2500.00',
-          fixedPrice: 'Yes',
-          name: 'Monthly plan',
-        }],
+        variations: [
+          {
+            variation_code: 'monthly-1',
+            variation_amount: '2500.00',
+            fixedPrice: 'Yes',
+            name: 'Monthly plan',
+          },
+        ],
       },
     });
-    await expect((service as any).resolveProductPrice('data', 'test-service', 'monthly-1', 2500))
-      .resolves.toEqual({ amount: 2500, productName: 'Monthly plan' });
-    await expect((service as any).resolveProductPrice('data', 'test-service', 'monthly-1', 2000))
-      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      (service as any).resolveProductPrice(
+        'data',
+        'test-service',
+        'monthly-1',
+        2500,
+      ),
+    ).resolves.toEqual({ amount: 2500, productName: 'Monthly plan' });
+    await expect(
+      (service as any).resolveProductPrice(
+        'data',
+        'test-service',
+        'monthly-1',
+        2000,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('accepts flexible amounts only within provider-published minimum and maximum', async () => {
     vtpass.getServices.mockResolvedValue({
-      content: [{
-        serviceID: 'mtn',
-        name: 'MTN Airtime',
-        minimium_amount: '50',
-        maximum_amount: '50000',
-        product_type: 'fix',
-      }],
+      content: [
+        {
+          serviceID: 'mtn',
+          name: 'MTN Airtime',
+          minimium_amount: '50',
+          maximum_amount: '50000',
+          product_type: 'fix',
+        },
+      ],
     });
-    await expect((service as any).resolveProductPrice('airtime', 'mtn', undefined, 500))
-      .resolves.toEqual({ amount: 500, productName: 'MTN Airtime' });
-    await expect((service as any).resolveProductPrice('airtime', 'mtn', undefined, 25))
-      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      (service as any).resolveProductPrice('airtime', 'mtn', undefined, 500),
+    ).resolves.toEqual({ amount: 500, productName: 'MTN Airtime' });
+    await expect(
+      (service as any).resolveProductPrice('airtime', 'mtn', undefined, 25),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('requires a variation for electricity and subscription products', async () => {
     vtpass.getServices.mockResolvedValue({
-      content: [{
-        serviceID: 'ikeja-electric',
-        name: 'Ikeja Electric',
-        minimium_amount: '100',
-        maximum_amount: '100000',
-        product_type: 'fix',
-      }],
+      content: [
+        {
+          serviceID: 'ikeja-electric',
+          name: 'Ikeja Electric',
+          minimium_amount: '100',
+          maximum_amount: '100000',
+          product_type: 'fix',
+        },
+      ],
     });
-    await expect((service as any).resolveProductPrice('electricity', 'ikeja-electric', undefined, 1000))
-      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      (service as any).resolveProductPrice(
+        'electricity',
+        'ikeja-electric',
+        undefined,
+        1000,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects services that are not in the selected provider catalogue', async () => {
     vtpass.getServices.mockResolvedValue({ content: [] });
-    await expect((service as any).resolveProductPrice('data', 'unknown-service', undefined, 500))
-      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      (service as any).resolveProductPrice(
+        'data',
+        'unknown-service',
+        undefined,
+        500,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('keeps pending provider responses pending without refunding the wallet', async () => {
-    prisma.transaction = { updateMany: jest.fn().mockResolvedValue({ count: 1 }) };
+    prisma.transaction = {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    };
     await (service as any).applyProviderOutcome('txn-1', {
       code: '099',
       content: { transactions: { status: 'pending' } },
     });
     expect(prisma.transaction.updateMany).toHaveBeenCalledWith({
       where: { id: 'txn-1', status: 'pending' },
-      data: expect.objectContaining({ providerStatus: 'pending', providerLastCheckedAt: expect.any(Date) }),
+      data: expect.objectContaining({
+        providerStatus: 'pending',
+        providerLastCheckedAt: expect.any(Date),
+      }),
     });
     expect(prisma.wallet).toBeUndefined();
   });
@@ -180,7 +245,9 @@ describe('VtpassPaymentsService', () => {
   it('does not create a second reversal when the transaction is no longer pending', async () => {
     const tx = {
       transaction: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'txn-1', status: 'completed' }),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'txn-1', status: 'completed' }),
         updateMany: jest.fn(),
         create: jest.fn(),
       },
@@ -195,7 +262,6 @@ describe('VtpassPaymentsService', () => {
     expect(tx.transaction.create).not.toHaveBeenCalled();
   });
 
-
   it('atomically reserves wallet funds and ledger entries before a confirmed purchase', async () => {
     const previousFlags = {
       enabled: process.env.VTPASS_BILL_PAYMENTS_ENABLED,
@@ -209,18 +275,22 @@ describe('VtpassPaymentsService', () => {
 
     vtpass.assertPurchaseConfigured.mockReturnValue(undefined);
     vtpass.getServices.mockResolvedValue({
-      content: [{
-        serviceID: 'mtn',
-        name: 'MTN Airtime',
-        minimium_amount: '50',
-        maximum_amount: '50000',
-        product_type: 'fix',
-      }],
+      content: [
+        {
+          serviceID: 'mtn',
+          name: 'MTN Airtime',
+          minimium_amount: '50',
+          maximum_amount: '50000',
+          product_type: 'fix',
+        },
+      ],
     });
     vtpass.createRequestId.mockReturnValue('202611241930ABCDEF1234');
     vtpass.purchase.mockResolvedValue({
       code: '000',
-      content: { transactions: { status: 'delivered', transactionId: 'provider-123' } },
+      content: {
+        transactions: { status: 'delivered', transactionId: 'provider-123' },
+      },
       purchased_code: '',
     });
 
@@ -261,8 +331,12 @@ describe('VtpassPaymentsService', () => {
       }),
     };
     prisma.$transaction = jest.fn(async (callback: any) => callback(tx));
-    ledger.getOrCreateCustomerAccount = jest.fn().mockResolvedValue({ id: 'wallet-ledger' });
-    ledger.getOrCreateSystemAccount = jest.fn().mockResolvedValue({ id: 'biller-clearing' });
+    ledger.getOrCreateCustomerAccount = jest
+      .fn()
+      .mockResolvedValue({ id: 'wallet-ledger' });
+    ledger.getOrCreateSystemAccount = jest
+      .fn()
+      .mockResolvedValue({ id: 'biller-clearing' });
     ledger.postJournal = jest.fn().mockResolvedValue(undefined);
 
     try {
@@ -292,9 +366,11 @@ describe('VtpassPaymentsService', () => {
       expect(vtpass.purchase).toHaveBeenCalledTimes(1);
       expect(result.status).toBe('completed');
     } finally {
-      if (previousFlags.enabled === undefined) delete process.env.VTPASS_BILL_PAYMENTS_ENABLED;
+      if (previousFlags.enabled === undefined)
+        delete process.env.VTPASS_BILL_PAYMENTS_ENABLED;
       else process.env.VTPASS_BILL_PAYMENTS_ENABLED = previousFlags.enabled;
-      if (previousFlags.verified === undefined) delete process.env.VTPASS_SANDBOX_VERIFIED;
+      if (previousFlags.verified === undefined)
+        delete process.env.VTPASS_SANDBOX_VERIFIED;
       else process.env.VTPASS_SANDBOX_VERIFIED = previousFlags.verified;
       if (previousFlags.jwt === undefined) delete process.env.JWT_SECRET;
       else process.env.JWT_SECRET = previousFlags.jwt;
@@ -307,14 +383,18 @@ describe('VtpassPaymentsService', () => {
     delete process.env.VTPASS_BILL_PAYMENTS_ENABLED;
     delete process.env.VTPASS_SANDBOX_VERIFIED;
     try {
-      await expect(service.purchase('user-1', {} as any))
-        .rejects.toBeInstanceOf(ServiceUnavailableException);
+      await expect(
+        service.purchase('user-1', {} as any),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
       expect(vtpass.assertPurchaseConfigured).not.toHaveBeenCalled();
       expect(vtpass.purchase).not.toHaveBeenCalled();
     } finally {
-      if (previous === undefined) delete process.env.VTPASS_BILL_PAYMENTS_ENABLED;
+      if (previous === undefined)
+        delete process.env.VTPASS_BILL_PAYMENTS_ENABLED;
       else process.env.VTPASS_BILL_PAYMENTS_ENABLED = previous;
-      if (previousVerified === undefined) delete process.env.VTPASS_SANDBOX_VERIFIED;
+      if (previousVerified === undefined)
+        delete process.env.VTPASS_SANDBOX_VERIFIED;
       else process.env.VTPASS_SANDBOX_VERIFIED = previousVerified;
     }
-  });});
+  });
+});

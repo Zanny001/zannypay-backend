@@ -31,10 +31,13 @@ export class VtpassPaymentsService {
   private responseState(payload: any): ProviderState {
     const code = String(payload?.code ?? '');
     const status = String(
-      payload?.content?.transactions?.status ?? payload?.transactions?.status ?? '',
+      payload?.content?.transactions?.status ??
+        payload?.transactions?.status ??
+        '',
     ).toLowerCase();
 
-    if (['000', '001'].includes(code) && status === 'delivered') return 'completed';
+    if (['000', '001'].includes(code) && status === 'delivered')
+      return 'completed';
     if (code === '016' || code === '040' || code === '091') {
       return 'failed';
     }
@@ -68,19 +71,42 @@ export class VtpassPaymentsService {
       (item) => String(item?.serviceID) === serviceID,
     );
     if (!service) {
-      throw new BadRequestException('The selected bill provider is not available in the current VTpass catalogue.');
+      throw new BadRequestException(
+        'The selected bill provider is not available in the current VTpass catalogue.',
+      );
     }
 
     const minimum = Number(service.minimium_amount ?? service.minimum_amount);
     const maximum = Number(service.maximum_amount);
-    if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum <= 0 || maximum < minimum) {
-      throw new BadRequestException('VTpass has not published safe amount limits for this product.');
+    if (
+      !Number.isFinite(minimum) ||
+      !Number.isFinite(maximum) ||
+      minimum <= 0 ||
+      maximum < minimum
+    ) {
+      throw new BadRequestException(
+        'VTpass has not published safe amount limits for this product.',
+      );
     }
 
     const productType = String(service.product_type || '').toLowerCase();
-    const variationCategories = ['data', 'tv', 'tv-subscription', 'internet', 'education', 'insurance'];
-    if (!variationCode && (this.requiresMerchantVerification(serviceID) || variationCategories.includes(identifier.toLowerCase()) || productType === 'variation')) {
-      throw new BadRequestException('Select a product variation before continuing.');
+    const variationCategories = [
+      'data',
+      'tv',
+      'tv-subscription',
+      'internet',
+      'education',
+      'insurance',
+    ];
+    if (
+      !variationCode &&
+      (this.requiresMerchantVerification(serviceID) ||
+        variationCategories.includes(identifier.toLowerCase()) ||
+        productType === 'variation')
+    ) {
+      throw new BadRequestException(
+        'Select a product variation before continuing.',
+      );
     }
 
     let variation: any = null;
@@ -90,27 +116,42 @@ export class VtpassPaymentsService {
         (item) => String(item?.variation_code) === variationCode,
       );
       if (!variation) {
-        throw new BadRequestException('The selected bill product is no longer available. Refresh the product list.');
+        throw new BadRequestException(
+          'The selected bill product is no longer available. Refresh the product list.',
+        );
       }
     }
 
     const fixed = variation
-      ? variation.fixedPrice === true || ['yes', 'true'].includes(String(variation.fixedPrice).toLowerCase())
+      ? variation.fixedPrice === true ||
+        ['yes', 'true'].includes(String(variation.fixedPrice).toLowerCase())
       : false;
     const catalogueAmount = variation ? Number(variation.variation_amount) : 0;
     let amount: number;
 
     if (fixed && Number.isFinite(catalogueAmount) && catalogueAmount > 0) {
       if (catalogueAmount < minimum || catalogueAmount > maximum) {
-        throw new BadRequestException('The provider catalogue price is outside the published service limits.');
+        throw new BadRequestException(
+          'The provider catalogue price is outside the published service limits.',
+        );
       }
       amount = Math.round(catalogueAmount * 100) / 100;
-      if (requestedAmount !== undefined && Math.abs(Number(requestedAmount) - amount) > 0.001) {
-        throw new BadRequestException('The bill amount does not match the current provider price. Refresh and try again.');
+      if (
+        requestedAmount !== undefined &&
+        Math.abs(Number(requestedAmount) - amount) > 0.001
+      ) {
+        throw new BadRequestException(
+          'The bill amount does not match the current provider price. Refresh and try again.',
+        );
       }
     } else {
-      if (requestedAmount === undefined || !Number.isFinite(Number(requestedAmount))) {
-        throw new BadRequestException('Enter an amount for this flexible-price product.');
+      if (
+        requestedAmount === undefined ||
+        !Number.isFinite(Number(requestedAmount))
+      ) {
+        throw new BadRequestException(
+          'Enter an amount for this flexible-price product.',
+        );
       }
       amount = Math.round(Number(requestedAmount) * 100) / 100;
       if (amount < minimum || amount > maximum) {
@@ -122,7 +163,12 @@ export class VtpassPaymentsService {
 
     return {
       amount,
-      productName: String(variation?.name || variation?.variation_name || service.name || serviceID),
+      productName: String(
+        variation?.name ||
+          variation?.variation_name ||
+          service.name ||
+          serviceID,
+      ),
     };
   }
 
@@ -133,7 +179,9 @@ export class VtpassPaymentsService {
   private async verifyRequiredCustomer(dto: VtpassBillPurchaseDto) {
     if (!this.requiresMerchantVerification(dto.serviceID)) return;
     if (/electric/i.test(dto.serviceID) && !dto.customerType) {
-      throw new BadRequestException('Select prepaid or postpaid before verifying this electricity meter.');
+      throw new BadRequestException(
+        'Select prepaid or postpaid before verifying this electricity meter.',
+      );
     }
     const verified = await this.vtpass.verifyCustomer({
       serviceID: dto.serviceID,
@@ -143,18 +191,26 @@ export class VtpassPaymentsService {
     // VTpass documents 020 as BILLER CONFIRMED. No debit occurs unless this
     // explicit verification result is returned for services that require it.
     const verificationCode = String(verified?.code ?? '');
-    const hasVerificationDetails = verified?.content && typeof verified.content === 'object';
+    const hasVerificationDetails =
+      verified?.content && typeof verified.content === 'object';
     // VTpass documents 020 as BILLER CONFIRMED; some service-specific
     // electricity sandbox responses return 000 with a populated customer record.
-    if (verificationCode !== '020' && !(verificationCode === '000' && hasVerificationDetails)) {
+    if (
+      verificationCode !== '020' &&
+      !(verificationCode === '000' && hasVerificationDetails)
+    ) {
       throw new BadRequestException(
-        verified?.response_description || 'We could not verify this customer account. Check the details and try again.',
+        verified?.response_description ||
+          'We could not verify this customer account. Check the details and try again.',
       );
     }
   }
 
   async purchase(userId: string, dto: VtpassBillPurchaseDto) {
-    if (process.env.VTPASS_BILL_PAYMENTS_ENABLED !== 'true' || process.env.VTPASS_SANDBOX_VERIFIED !== 'true') {
+    if (
+      process.env.VTPASS_BILL_PAYMENTS_ENABLED !== 'true' ||
+      process.env.VTPASS_SANDBOX_VERIFIED !== 'true'
+    ) {
       throw new ServiceUnavailableException(
         'VTpass bill purchases are not enabled yet. The sandbox catalogue and verification endpoints are available.',
       );
@@ -168,9 +224,13 @@ export class VtpassPaymentsService {
     const idempotencyKey = `${userId}:${dto.idempotencyKey}`;
     const hmacSecret = process.env.JWT_SECRET;
     if (!hmacSecret) {
-      throw new ServiceUnavailableException('Bill payment security configuration is incomplete.');
+      throw new ServiceUnavailableException(
+        'Bill payment security configuration is incomplete.',
+      );
     }
-    const customerIdentifierHash = createHmac('sha256', hmacSecret).update(billersCode).digest('hex');
+    const customerIdentifierHash = createHmac('sha256', hmacSecret)
+      .update(billersCode)
+      .digest('hex');
     const existing = await this.prisma.transaction.findFirst({
       where: { userId, idempotencyKey },
     });
@@ -184,12 +244,19 @@ export class VtpassPaymentsService {
         existing.customerIdentifierHash !== customerIdentifierHash ||
         Math.abs(Number(existing.amount) - Number(dto.amount)) > 0.001
       ) {
-        throw new BadRequestException('This idempotency key was already used for a different bill purchase.');
+        throw new BadRequestException(
+          'This idempotency key was already used for a different bill purchase.',
+        );
       }
       return this.receipt(existing);
     }
 
-    const { amount, productName } = await this.resolveProductPrice(dto.identifier, serviceID, variationCode || undefined, dto.amount);
+    const { amount, productName } = await this.resolveProductPrice(
+      dto.identifier,
+      serviceID,
+      variationCode || undefined,
+      dto.amount,
+    );
     await this.verifyRequiredCustomer(dto);
     const requestId = this.vtpass.createRequestId();
     let reserved: any;
@@ -197,13 +264,17 @@ export class VtpassPaymentsService {
       reserved = await this.prisma.$transaction(async (tx) => {
         const user = await tx.user.findUnique({
           where: { id: userId },
-          });
+        });
         if (!user) throw new NotFoundException('User not found.');
         if (!dto.phone && !user.phone) {
-          throw new BadRequestException('Add a valid phone number before purchasing this service.');
+          throw new BadRequestException(
+            'Add a valid phone number before purchasing this service.',
+          );
         }
         if (user.isFrozen) {
-          throw new ForbiddenException('Your account is currently restricted. Please contact support.');
+          throw new ForbiddenException(
+            'Your account is currently restricted. Please contact support.',
+          );
         }
         if (!(await bcrypt.compare(dto.pin, user.pin))) {
           throw new UnauthorizedException('Incorrect PIN.');
@@ -212,7 +283,8 @@ export class VtpassPaymentsService {
           where: { userId, balance: { gte: amount } },
           data: { balance: { decrement: amount } },
         });
-        if (debit.count !== 1) throw new BadRequestException('Insufficient funds.');
+        if (debit.count !== 1)
+          throw new BadRequestException('Insufficient funds.');
 
         const transaction = await tx.transaction.create({
           data: {
@@ -247,10 +319,21 @@ export class VtpassPaymentsService {
         await this.ledger.postJournal(
           tx,
           [
-            { accountId: walletAccount.id, direction: LedgerDirection.DEBIT, amount },
-            { accountId: billerClearing.id, direction: LedgerDirection.CREDIT, amount },
+            {
+              accountId: walletAccount.id,
+              direction: LedgerDirection.DEBIT,
+              amount,
+            },
+            {
+              accountId: billerClearing.id,
+              direction: LedgerDirection.CREDIT,
+              amount,
+            },
           ],
-          { transactionId: transaction.id, memo: `VTpass reservation: ${serviceID}/${variationCode}` },
+          {
+            transactionId: transaction.id,
+            memo: `VTpass reservation: ${serviceID}/${variationCode}`,
+          },
         );
         return { transaction, user };
       });
@@ -269,7 +352,9 @@ export class VtpassPaymentsService {
             replay.customerIdentifierHash !== customerIdentifierHash ||
             Math.abs(Number(replay.amount) - Number(dto.amount)) > 0.001
           ) {
-            throw new BadRequestException('This idempotency key was already used for a different bill purchase.');
+            throw new BadRequestException(
+              'This idempotency key was already used for a different bill purchase.',
+            );
           }
           return this.receipt(replay);
         }
@@ -291,12 +376,24 @@ export class VtpassPaymentsService {
         ...(dto.customerType ? { type: dto.customerType } : {}),
       });
     } catch {
-      this.logger.warn(`VTpass purchase outcome uncertain for ${requestId}; transaction left pending for requery.`);
-      await this.prisma.transaction.updateMany({ where: { id: reserved.transaction.id, status: 'pending' }, data: { providerStatus: 'purchase_response_unknown', providerLastCheckedAt: new Date() } });
+      this.logger.warn(
+        `VTpass purchase outcome uncertain for ${requestId}; transaction left pending for requery.`,
+      );
+      await this.prisma.transaction.updateMany({
+        where: { id: reserved.transaction.id, status: 'pending' },
+        data: {
+          providerStatus: 'purchase_response_unknown',
+          providerLastCheckedAt: new Date(),
+        },
+      });
       const current = await this.prisma.transaction.findUnique({
         where: { id: reserved.transaction.id },
       });
-      return { ...this.receipt(current), message: 'Payment is processing. Check the transaction status; do not submit a new purchase.' };
+      return {
+        ...this.receipt(current),
+        message:
+          'Payment is processing. Check the transaction status; do not submit a new purchase.',
+      };
     }
 
     await this.applyProviderOutcome(reserved.transaction.id, providerResponse);
@@ -333,13 +430,22 @@ export class VtpassPaymentsService {
   private async applyProviderOutcome(transactionId: string, payload: any) {
     const state = this.responseState(payload);
     const providerStatus = String(
-      payload?.content?.transactions?.status ?? payload?.transactions?.status ?? payload?.code ?? 'unknown',
+      payload?.content?.transactions?.status ??
+        payload?.transactions?.status ??
+        payload?.code ??
+        'unknown',
     ).slice(0, 64);
     const providerTransactionId = payload?.content?.transactions?.transactionId
       ? String(payload.content.transactions.transactionId).slice(0, 128)
       : null;
-    const purchasedCodeValue = payload?.purchased_code || payload?.token || payload?.mainToken || payload?.main_token;
-    const purchasedCode = purchasedCodeValue ? String(purchasedCodeValue).slice(0, 512) : null;
+    const purchasedCodeValue =
+      payload?.purchased_code ||
+      payload?.token ||
+      payload?.mainToken ||
+      payload?.main_token;
+    const purchasedCode = purchasedCodeValue
+      ? String(purchasedCodeValue).slice(0, 512)
+      : null;
 
     if (state === 'pending') {
       await this.prisma.transaction.updateMany({
@@ -363,11 +469,17 @@ export class VtpassPaymentsService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      const original = await tx.transaction.findUnique({ where: { id: transactionId } });
+      const original = await tx.transaction.findUnique({
+        where: { id: transactionId },
+      });
       if (!original || original.status !== 'pending') return;
       const claimed = await tx.transaction.updateMany({
         where: { id: transactionId, status: 'pending' },
-        data: { status: 'failed', providerStatus, providerLastCheckedAt: new Date() },
+        data: {
+          status: 'failed',
+          providerStatus,
+          providerLastCheckedAt: new Date(),
+        },
       });
       if (claimed.count !== 1) return;
 
@@ -375,7 +487,8 @@ export class VtpassPaymentsService {
         where: { userId: original.userId },
         data: { balance: { increment: Number(original.amount) } },
       });
-      if (wallet.count !== 1) throw new Error('Wallet missing during VTpass reversal.');
+      if (wallet.count !== 1)
+        throw new Error('Wallet missing during VTpass reversal.');
 
       const reversal = await tx.transaction.create({
         data: {
@@ -404,7 +517,8 @@ export class VtpassPaymentsService {
     const transaction = await this.prisma.transaction.findFirst({
       where: { id: transactionId, userId, providerRequestId: { not: null } },
     });
-    if (!transaction) throw new NotFoundException('Bill transaction not found.');
+    if (!transaction)
+      throw new NotFoundException('Bill transaction not found.');
 
     // A customer opening a pending receipt can request a fresh status check.
     // Rate-limit this per transaction using the same checkpoint as the cron
@@ -415,7 +529,9 @@ export class VtpassPaymentsService {
         transaction.providerLastCheckedAt.getTime() < Date.now() - 30_000);
     if (shouldRequery) {
       try {
-        const response = await this.vtpass.requery(transaction.providerRequestId);
+        const response = await this.vtpass.requery(
+          transaction.providerRequestId,
+        );
         await this.applyProviderOutcome(transaction.id, response);
       } catch {
         await this.prisma.transaction.updateMany({
@@ -455,11 +571,21 @@ export class VtpassPaymentsService {
     });
     for (const transaction of pending) {
       try {
-        const response = await this.vtpass.requery(transaction.providerRequestId);
+        const response = await this.vtpass.requery(
+          transaction.providerRequestId,
+        );
         await this.applyProviderOutcome(transaction.id, response);
       } catch {
-        this.logger.warn(`VTpass requery failed for transaction ${transaction.id}; it remains pending.`);
-        await this.prisma.transaction.updateMany({ where: { id: transaction.id, status: 'pending' }, data: { providerStatus: 'requery_unavailable', providerLastCheckedAt: new Date() } });
+        this.logger.warn(
+          `VTpass requery failed for transaction ${transaction.id}; it remains pending.`,
+        );
+        await this.prisma.transaction.updateMany({
+          where: { id: transaction.id, status: 'pending' },
+          data: {
+            providerStatus: 'requery_unavailable',
+            providerLastCheckedAt: new Date(),
+          },
+        });
       }
     }
   }

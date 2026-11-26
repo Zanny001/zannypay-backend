@@ -1,5 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -105,5 +108,4 @@ describe('TransactionsService', () => {
       else process.env.PAYSTACK_SECRET_KEY = originalSecret;
     }
   });
-
 });
