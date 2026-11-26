@@ -122,6 +122,7 @@ describe('UserService — Privacy & Account', () => {
       expect(update.data.phone).toBe('deleted-user-1');
       expect(update.data.email).toBe('deleted-user-1@deleted.zannypay.local');
       expect(update.data.pin).not.toBe(baseUser.pin);
+      expect(update.data.tokenVersion).toEqual({ increment: 1 });
       expect(update.data.bvnEncrypted).toBeNull();
       expect(update.data.bvnLast4).toBeNull();
       expect(update.data.referralCode).toBeNull();
