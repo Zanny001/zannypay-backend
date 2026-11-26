@@ -55,7 +55,7 @@ export class WebSessionService {
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, phone: true, accountNumber: true,
+            id: true, name: true, email: true, phone: true, accountNumber: true, deletedAt: true,
             businessName: true, businessAccountNumber: true, profileImage: true,
             kycTier: true, kycStatus: true, emailVerified: true,
             wallet: { select: { balance: true } },
@@ -63,7 +63,7 @@ export class WebSessionService {
         },
       },
     });
-    if (!session || session.revokedAt || session.expiresAt <= new Date()) return null;
+    if (!session || session.revokedAt || session.expiresAt <= new Date() || session.user.deletedAt) return null;
     const { wallet, ...user } = session.user;
     return { ...user, balance: wallet?.balance ?? 0 };
   }
