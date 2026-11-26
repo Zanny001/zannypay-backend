@@ -9,7 +9,9 @@ describe('WebSessionService', () => {
       updateMany: jest.fn(),
     },
   };
-  const jwtService = { signAsync: jest.fn().mockResolvedValue('short-lived-api-jwt') };
+  const jwtService = {
+    signAsync: jest.fn().mockResolvedValue('short-lived-api-jwt'),
+  };
   let service: WebSessionService;
 
   beforeEach(() => {
@@ -34,7 +36,9 @@ describe('WebSessionService', () => {
         expiresAt: expect.any(Date),
       }),
     });
-    expect(prisma.webSession.create.mock.calls[0][0].data.tokenHash).not.toBe(result.token);
+    expect(prisma.webSession.create.mock.calls[0][0].data.tokenHash).not.toBe(
+      result.token,
+    );
   });
 
   it('exchanges a valid opaque session for a server-side bearer token', async () => {
@@ -46,20 +50,52 @@ describe('WebSessionService', () => {
 
     const result = await service.authenticate('opaque-cookie-secret');
 
-    expect(result).toEqual({ accessToken: 'short-lived-api-jwt', userId: 'user-1' });
+    expect(result).toEqual({
+      accessToken: 'short-lived-api-jwt',
+      userId: 'user-1',
+    });
     expect(jwtService.signAsync).toHaveBeenCalledWith({
       sub: 'user-1',
       phone: '+2348000000000',
     });
   });
 
-  it.each([
-    ['revoked', { revokedAt: new Date(), expiresAt: new Date(Date.now() + 60_000), user: { id: 'u', phone: 'p', deletedAt: null } }],
-    ['expired', { revokedAt: null, expiresAt: new Date(Date.now() - 60_000), user: { id: 'u', phone: 'p', deletedAt: null } }],
-    ['deleted user', { revokedAt: null, expiresAt: new Date(Date.now() + 60_000), user: { id: 'u', phone: 'p', deletedAt: new Date() } }],
-  ])('rejects %s sessions', async (_label, session) => {
-    prisma.webSession.findUnique.mockResolvedValue(session);
-    await expect(service.authenticate('opaque-cookie-secret')).resolves.toBeNull();
+  it('rejects revoked sessions', async () => {
+    prisma.webSession.findUnique.mockResolvedValue({
+      revokedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+      user: { id: 'user-1', phone: 'phone', deletedAt: null },
+    });
+
+    await expect(
+      service.authenticate('opaque-cookie-secret'),
+    ).resolves.toBeNull();
+    expect(jwtService.signAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects expired sessions', async () => {
+    prisma.webSession.findUnique.mockResolvedValue({
+      revokedAt: null,
+      expiresAt: new Date(Date.now() - 60_000),
+      user: { id: 'user-1', phone: 'phone', deletedAt: null },
+    });
+
+    await expect(
+      service.authenticate('opaque-cookie-secret'),
+    ).resolves.toBeNull();
+    expect(jwtService.signAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects sessions belonging to deleted users', async () => {
+    prisma.webSession.findUnique.mockResolvedValue({
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      user: { id: 'user-1', phone: 'phone', deletedAt: new Date() },
+    });
+
+    await expect(
+      service.authenticate('opaque-cookie-secret'),
+    ).resolves.toBeNull();
     expect(jwtService.signAsync).not.toHaveBeenCalled();
   });
 
