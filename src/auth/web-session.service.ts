@@ -64,7 +64,7 @@ export class WebSessionService {
       },
     });
     if (!session || session.revokedAt || session.expiresAt <= new Date() || session.user.deletedAt) return null;
-    const { wallet, ...user } = session.user;
+    const { wallet, deletedAt: _deletedAt, ...user } = session.user;
     return { ...user, balance: wallet?.balance ?? 0 };
   }
 
