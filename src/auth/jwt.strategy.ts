@@ -38,7 +38,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       user.deletedAt ||
       (payload.tokenVersion ?? 0) !== user.tokenVersion
     ) {
-      throw new UnauthorizedException('Your session has expired. Please sign in again.');
+      throw new UnauthorizedException(
+        'Your session has expired. Please sign in again.',
+      );
     }
 
     return { userId: user.id, phone: user.phone };
