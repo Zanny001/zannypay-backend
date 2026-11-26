@@ -2,7 +2,7 @@ import {
   Body, Controller, ForbiddenException, Get, HttpCode, HttpStatus,
   Post, Req, Res,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { SignupDto } from './dto/signup.dto';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
