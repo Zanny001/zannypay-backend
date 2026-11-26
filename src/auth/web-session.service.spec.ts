@@ -57,11 +57,7 @@ describe('WebSessionService', () => {
     ]);
 
     await expect(
-      service.create(
-        'user-1',
-        { headers: {}, ip: '127.0.0.1' },
-        '1357',
-      ),
+      service.create('user-1', { headers: {}, ip: '127.0.0.1' }, '1357'),
     ).rejects.toThrow('Your PIN changed during sign-in. Please try again.');
 
     expect(tx.webSession.create).not.toHaveBeenCalled();
