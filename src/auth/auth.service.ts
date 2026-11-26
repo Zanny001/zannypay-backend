@@ -83,7 +83,11 @@ export class AuthService {
       referredBy,
     });
 
-    const payload = { sub: newUser.id, phone: newUser.phone };
+    const payload = {
+      sub: newUser.id,
+      phone: newUser.phone,
+      tokenVersion: newUser.tokenVersion ?? 0,
+    };
     const accessToken = await this.jwtService.signAsync(payload);
 
     await this.analyticsService.track(ANALYTICS_EVENTS.SIGNUP_COMPLETED, {
@@ -179,7 +183,11 @@ export class AuthService {
 
     await ensureReferralCode(this.prisma, user);
 
-    const payload = { sub: user.id, phone: user.phone };
+    const payload = {
+      sub: user.id,
+      phone: user.phone,
+      tokenVersion: user.tokenVersion ?? 0,
+    };
     const accessToken = await this.jwtService.signAsync(payload);
 
     return {
