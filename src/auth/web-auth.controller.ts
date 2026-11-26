@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { SignupDto } from './dto/signup.dto';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { WebSessionService, WEB_SESSION_COOKIE, WEB_SESSION_TTL_MS } from './web-session.service';
 
@@ -32,6 +33,7 @@ export class WebAuthController {
     });
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
@@ -43,9 +45,11 @@ export class WebAuthController {
     const result = await this.authService.login(body.phone, body.pin);
     const session = await this.sessions.create(result.user.id, request);
     this.setCookie(response, session.token);
+    response.setHeader('Cache-Control', 'no-store');
     return { user: result.user, expiresAt: session.expiresAt };
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
   async signup(
