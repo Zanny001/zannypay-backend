@@ -270,16 +270,22 @@ export class AuthService {
     );
 
     const hashedPin = await bcrypt.hash(dto.newPin, 10);
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.prisma.$transaction(async (tx) => {
+      const lockedUsers = await tx.$queryRaw<
+        Array<{ id: string; deletedAt: Date | null }>
+      >`SELECT "id", "deletedAt" FROM "User" WHERE "id" = ${user.id} FOR UPDATE`;
+      if (!lockedUsers[0] || lockedUsers[0].deletedAt) {
+        throw new NotFoundException('This account is no longer available.');
+      }
+      await tx.user.update({
         where: { id: user.id },
         data: { pin: hashedPin },
-      }),
-      this.prisma.webSession.updateMany({
+      });
+      await tx.webSession.updateMany({
         where: { userId: user.id, revokedAt: null },
         data: { revokedAt: new Date() },
-      }),
-    ]);
+      });
+    });
 
     await this.analyticsService.track(ANALYTICS_EVENTS.PIN_RESET_COMPLETED, {
       userId: user.id,
