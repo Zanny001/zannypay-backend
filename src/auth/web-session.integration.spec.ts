@@ -142,8 +142,7 @@ describe('Customer browser session HTTP integration', () => {
     await app?.close();
     if (previousEnv.jwt === undefined) delete process.env.JWT_SECRET;
     else process.env.JWT_SECRET = previousEnv.jwt;
-    if (previousEnv.adminJwt === undefined)
-      delete process.env.ADMIN_JWT_SECRET;
+    if (previousEnv.adminJwt === undefined) delete process.env.ADMIN_JWT_SECRET;
     else process.env.ADMIN_JWT_SECRET = previousEnv.adminJwt;
     if (previousEnv.origins === undefined) delete process.env.CORS_ORIGINS;
     else process.env.CORS_ORIGINS = previousEnv.origins;
@@ -265,8 +264,6 @@ describe('Customer browser session HTTP integration', () => {
 
     expect(response.body).toEqual({ success: true });
     expect(sessions.revoke).toHaveBeenCalledWith('opaque-browser-token');
-    expect(response.headers['set-cookie'][0]).toContain(
-      'zannypay_session=;',
-    );
+    expect(response.headers['set-cookie'][0]).toContain('zannypay_session=;');
   });
 });
