@@ -32,7 +32,7 @@ export class WebSessionGuard implements CanActivate {
 
     if (
       !['GET', 'HEAD', 'OPTIONS'].includes(
-        String(request.method).toUpperCase(),
+        String(request.method).toUpperCase()
       )
     ) {
       const origin = request.headers.origin;
