@@ -108,7 +108,7 @@ describe('AuthService', () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
-      data: { pin: expect.any(String) },
+      data: { pin: expect.any(String), tokenVersion: { increment: 1 } },
     });
     expect(prisma.webSession.updateMany).toHaveBeenCalledWith({
       where: { userId: 'user-1', revokedAt: null },
