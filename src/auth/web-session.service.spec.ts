@@ -1,5 +1,4 @@
 import { createHash } from 'crypto';
-import * as bcrypt from 'bcrypt';
 import { WebSessionService } from './web-session.service';
 
 describe('WebSessionService', () => {
