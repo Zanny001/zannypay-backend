@@ -64,8 +64,21 @@ export class WebSessionService {
       },
     });
     if (!session || session.revokedAt || session.expiresAt <= new Date() || session.user.deletedAt) return null;
-    const { wallet, deletedAt: _deletedAt, ...user } = session.user;
-    return { ...user, balance: wallet?.balance ?? 0 };
+    const user = session.user;
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      accountNumber: user.accountNumber,
+      businessName: user.businessName,
+      businessAccountNumber: user.businessAccountNumber,
+      profileImage: user.profileImage,
+      kycTier: user.kycTier,
+      kycStatus: user.kycStatus,
+      emailVerified: user.emailVerified,
+      balance: user.wallet?.balance ?? 0,
+    };
   }
 
   async revoke(token: string) {
