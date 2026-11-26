@@ -61,7 +61,7 @@ export class WebSessionService {
       where: { tokenHash: this.hash(token) },
       include: {
         user: {
-          select: { id: true, phone: true, deletedAt: true },
+          select: { id: true, phone: true, deletedAt: true, tokenVersion: true },
         },
       },
     });
@@ -76,6 +76,7 @@ export class WebSessionService {
     const accessToken = await this.jwtService.signAsync({
       sub: session.user.id,
       phone: session.user.phone,
+      tokenVersion: session.user.tokenVersion,
     });
     return { accessToken, userId: session.user.id };
   }
