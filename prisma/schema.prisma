@@ -265,6 +265,8 @@ model User {
   emailVerified Boolean       @default(false)
   phone         String        @unique
   pin           String
+  // Incremented on credential compromise/reset to revoke previously issued customer JWTs.
+  tokenVersion  Int           @default(0)
   accountNumber String        @unique
   // ZannyPay Business, Phase 1 — a second account number on the same
   // login, not a separate account/table. A dedicated BusinessProfile model
