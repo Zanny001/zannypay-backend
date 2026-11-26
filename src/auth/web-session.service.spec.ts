@@ -67,7 +67,7 @@ describe('WebSessionService', () => {
     prisma.webSession.findUnique.mockResolvedValue({
       revokedAt: null,
       expiresAt: new Date(Date.now() + 60_000),
-      user: { id: 'user-1', phone: '+2348000000000', deletedAt: null },
+      user: { id: 'user-1', phone: '+2348000000000', deletedAt: null, tokenVersion: 3 },
     });
 
     const result = await service.authenticate('opaque-cookie-secret');
@@ -79,6 +79,7 @@ describe('WebSessionService', () => {
     expect(jwtService.signAsync).toHaveBeenCalledWith({
       sub: 'user-1',
       phone: '+2348000000000',
+      tokenVersion: 3,
     });
   });
 
