@@ -308,6 +308,7 @@ export class UserService {
           email: `${tombstone}@deleted.zannypay.local`,
           phone: tombstone,
           pin: unknowablePin,
+          tokenVersion: { increment: 1 },
           businessName: null,
           businessAccountNumber: null,
           profileImage: null,
@@ -513,7 +514,7 @@ export class UserService {
 
       await tx.user.update({
         where: { id: userId },
-        data: { pin: hashedNewPin },
+        data: { pin: hashedNewPin, tokenVersion: { increment: 1 } },
       });
       await tx.webSession.updateMany({
         where: { userId, revokedAt: null },
