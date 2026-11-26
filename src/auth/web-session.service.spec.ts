@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { WebSessionService } from './web-session.service';
 
 describe('WebSessionService', () => {
@@ -47,6 +48,23 @@ describe('WebSessionService', () => {
     expect(tx.webSession.create.mock.calls[0][0].data.tokenHash).not.toBe(
       result.token,
     );
+  });
+
+  it('rejects browser session creation if the PIN changed after initial login verification', async () => {
+    const currentPinHash = await bcrypt.hash('2468', 4);
+    tx.$queryRaw.mockResolvedValue([
+      { id: 'user-1', pin: currentPinHash, deletedAt: null },
+    ]);
+
+    await expect(
+      service.create(
+        'user-1',
+        { headers: {}, ip: '127.0.0.1' },
+        '1357',
+      ),
+    ).rejects.toThrow('Your PIN changed during sign-in. Please try again.');
+
+    expect(tx.webSession.create).not.toHaveBeenCalled();
   });
 
   it('exchanges a valid opaque session for a server-side bearer token', async () => {
