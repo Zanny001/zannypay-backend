@@ -127,6 +127,10 @@ describe('UserService — Privacy & Account', () => {
       expect(update.data.referralCode).toBeNull();
       expect(update.data.isFrozen).toBe(true);
       expect(update.data.deletedAt).toBeInstanceOf(Date);
+      expect(prisma.webSession.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
     });
 
     it('refuses while the wallet still holds a balance', async () => {
