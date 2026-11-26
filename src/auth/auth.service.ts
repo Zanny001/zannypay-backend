@@ -287,7 +287,7 @@ export class AuthService {
       }
       await tx.user.update({
         where: { id: user.id },
-        data: { pin: hashedPin },
+        data: { pin: hashedPin, tokenVersion: { increment: 1 } },
       });
       await tx.webSession.updateMany({
         where: { userId: user.id, revokedAt: null },
