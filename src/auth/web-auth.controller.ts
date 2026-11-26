@@ -63,7 +63,11 @@ export class WebAuthController {
   ) {
     this.assertTrustedOrigin(request);
     const result = await this.authService.login(body.phone, body.pin);
-    const session = await this.sessions.create(result.user.id, request, body.pin);
+    const session = await this.sessions.create(
+      result.user.id,
+      request,
+      body.pin,
+    );
     this.setCookie(response, session.token);
     response.setHeader('Cache-Control', 'no-store');
     return { user: result.user, expiresAt: session.expiresAt };
