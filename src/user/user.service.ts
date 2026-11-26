@@ -299,10 +299,6 @@ export class UserService {
       // number are PII-adjacent and useless after erasure.
       this.prisma.pushToken.deleteMany({ where: { userId } }),
       this.prisma.otpCode.deleteMany({ where: { target: user.phone } }),
-      this.prisma.webSession.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      }),
       this.prisma.user.update({
         where: { id: userId },
         data: {
@@ -333,6 +329,12 @@ export class UserService {
           isFrozen: true,
           deletedAt: new Date(),
         },
+      }),
+      // Run after the user-row update has acquired its lock. This also
+      // catches a browser session committed immediately before deletion.
+      this.prisma.webSession.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
       }),
     ]);
 
