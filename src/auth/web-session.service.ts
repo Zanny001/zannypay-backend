@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
 
 export const WEB_SESSION_COOKIE = 'zannypay_session';
 export const WEB_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -17,18 +18,40 @@ export class WebSessionService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  async create(userId: string, request: any) {
+  // Lock the customer row while validating the credential and inserting the
+  // session. PIN-reset/change and account-deletion flows take the same lock.
+  // This closes the race where a login verifies an old PIN, waits, and then
+  // creates a fresh session after the reset has already revoked old sessions.
+  async create(userId: string, request: any, expectedPin?: string) {
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + WEB_SESSION_TTL_MS);
-    await this.prisma.webSession.create({
-      data: {
-        userId,
-        tokenHash: this.hash(token),
-        expiresAt,
-        userAgent: request.headers?.['user-agent']?.slice(0, 500),
-        ipAddress: request.ip?.slice(0, 64),
-      },
+    const data = {
+      userId,
+      tokenHash: this.hash(token),
+      expiresAt,
+      userAgent: request.headers?.['user-agent']?.slice(0, 500),
+      ipAddress: request.ip?.slice(0, 64),
+    };
+
+    await this.prisma.$transaction(async (tx) => {
+      const users = await tx.$queryRaw<
+        Array<{ id: string; pin: string; deletedAt: Date | null }>
+      >`SELECT "id", "pin", "deletedAt" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      const user = users[0];
+      if (!user || user.deletedAt) {
+        throw new UnauthorizedException('This account is unavailable.');
+      }
+      if (
+        expectedPin !== undefined &&
+        !(await bcrypt.compare(expectedPin, user.pin))
+      ) {
+        throw new UnauthorizedException(
+          'Your PIN changed during sign-in. Please try again.',
+        );
+      }
+      await tx.webSession.create({ data });
     });
+
     return { token, expiresAt };
   }
 
