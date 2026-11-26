@@ -7,13 +7,18 @@ import { OtpService, OTP_PURPOSES } from '../otp/otp.service';
 
 describe('AuthService', () => {
   let service: AuthService;
+  const tx = {
+    $queryRaw: jest.fn(),
+    user: { update: jest.fn() },
+    webSession: { updateMany: jest.fn() },
+  };
   const prisma = {
     user: {
       findUnique: jest.fn(),
-      update: jest.fn(),
+      update: tx.user.update,
     },
     webSession: {
-      updateMany: jest.fn(),
+      updateMany: tx.webSession.updateMany,
     },
     $transaction: jest.fn(),
   };
@@ -29,9 +34,8 @@ describe('AuthService', () => {
     prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
     prisma.user.update.mockResolvedValue({});
     prisma.webSession.updateMany.mockResolvedValue({ count: 1 });
-    prisma.$transaction.mockImplementation((operations) =>
-      Promise.all(operations),
-    );
+    tx.$queryRaw.mockResolvedValue([{ id: 'user-1', deletedAt: null }]);
+    prisma.$transaction.mockImplementation((callback) => callback(tx));
     otp.requestCode.mockResolvedValue({ sent: true, expiresInSeconds: 600 });
 
     const module: TestingModule = await Test.createTestingModule({
