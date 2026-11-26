@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
-import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../prisma/prisma.service';
 
 export const WEB_SESSION_COOKIE = 'zannypay_session';
 export const WEB_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -36,9 +36,18 @@ export class WebSessionService {
     if (!token || token.length > 256) return null;
     const session = await this.prisma.webSession.findUnique({
       where: { tokenHash: this.hash(token) },
-      include: { user: { select: { id: true, phone: true, deletedAt: true } } },
+      include: {
+        user: {
+          select: { id: true, phone: true, deletedAt: true },
+        },
+      },
     });
-    if (!session || session.revokedAt || session.expiresAt <= new Date() || session.user.deletedAt) {
+    if (
+      !session ||
+      session.revokedAt ||
+      session.expiresAt <= new Date() ||
+      session.user.deletedAt
+    ) {
       return null;
     }
     const accessToken = await this.jwtService.signAsync({
@@ -55,15 +64,31 @@ export class WebSessionService {
       include: {
         user: {
           select: {
-            id: true, name: true, email: true, phone: true, accountNumber: true, deletedAt: true,
-            businessName: true, businessAccountNumber: true, profileImage: true,
-            kycTier: true, kycStatus: true, emailVerified: true,
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            accountNumber: true,
+            deletedAt: true,
+            businessName: true,
+            businessAccountNumber: true,
+            profileImage: true,
+            kycTier: true,
+            kycStatus: true,
+            emailVerified: true,
             wallet: { select: { balance: true } },
           },
         },
       },
     });
-    if (!session || session.revokedAt || session.expiresAt <= new Date() || session.user.deletedAt) return null;
+    if (
+      !session ||
+      session.revokedAt ||
+      session.expiresAt <= new Date() ||
+      session.user.deletedAt
+    ) {
+      return null;
+    }
     const user = session.user;
     return {
       id: user.id,
