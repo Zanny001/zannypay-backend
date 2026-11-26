@@ -81,6 +81,19 @@ describe('Customer browser session HTTP integration', () => {
     };
 
     const prisma = {
+      user: {
+        findUnique: jest.fn(({ where }) =>
+          Promise.resolve({
+            id: where.id,
+            phone:
+              where.id === 'native-customer'
+                ? '+2348111111111'
+                : '+2348000000000',
+            deletedAt: null,
+            tokenVersion: 0,
+          }),
+        ),
+      },
       adminUser: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'admin-1',
@@ -121,6 +134,7 @@ describe('Customer browser session HTTP integration', () => {
                 accessToken: await jwtService.signAsync({
                   sub: 'customer-1',
                   phone: '+2348000000000',
+                  tokenVersion: 0,
                 }),
                 userId: 'customer-1',
               };
@@ -168,6 +182,7 @@ describe('Customer browser session HTTP integration', () => {
         accessToken: await jwt.signAsync({
           sub: 'customer-1',
           phone: '+2348000000000',
+          tokenVersion: 0,
         }),
         userId: 'customer-1',
       };
@@ -235,6 +250,19 @@ describe('Customer browser session HTTP integration', () => {
       userId: 'native-customer',
       phone: '+2348111111111',
     });
+  });
+
+  it('rejects a previously issued customer JWT after the credential generation changes', async () => {
+    const staleToken = await jwt.signAsync({
+      sub: 'customer-1',
+      phone: '+2348000000000',
+      tokenVersion: -1,
+    });
+
+    await request(app.getHttpServer())
+      .get('/customer-probe')
+      .set('Authorization', `Bearer ${staleToken}`)
+      .expect(401);
   });
 
   it('does not allow a customer browser session to authenticate an admin route', async () => {
