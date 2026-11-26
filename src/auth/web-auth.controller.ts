@@ -43,7 +43,10 @@ export class WebAuthController {
     response.cookie(WEB_SESSION_COOKIE, token, {
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      // The web client and API are served through the same origin/reverse
+      // proxy. Lax prevents the session cookie being sent in cross-site
+      // subrequests, reducing CSRF exposure while supporting normal navigation.
+      sameSite: 'lax',
       path: '/api/v1',
       maxAge: WEB_SESSION_TTL_MS,
     });
@@ -106,7 +109,7 @@ export class WebAuthController {
     response.clearCookie(WEB_SESSION_COOKIE, {
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: 'lax',
       path: '/api/v1',
     });
     response.setHeader('Cache-Control', 'no-store');
