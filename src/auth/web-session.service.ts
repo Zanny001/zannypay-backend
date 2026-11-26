@@ -61,7 +61,12 @@ export class WebSessionService {
       where: { tokenHash: this.hash(token) },
       include: {
         user: {
-          select: { id: true, phone: true, deletedAt: true, tokenVersion: true },
+          select: {
+            id: true,
+            phone: true,
+            deletedAt: true,
+            tokenVersion: true,
+          },
         },
       },
     });
