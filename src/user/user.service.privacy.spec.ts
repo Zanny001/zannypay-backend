@@ -41,6 +41,7 @@ function makeModule(user: any) {
     },
     pushToken: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     otpCode: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    webSession: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     $transaction: jest.fn(async (ops: Promise<any>[]) => Promise.all(ops)),
   };
   const mailer = { sendMail: jest.fn().mockResolvedValue({}) };
