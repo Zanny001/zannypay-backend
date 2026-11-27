@@ -176,6 +176,9 @@ export class PaystackTransfersService {
           reversalReason: `Paystack transfer ${status}`,
         },
       });
+      // reverseJournal inverts both the initial wallet reservation and the
+      // payout-float settlement (when already completed), restoring the
+      // customer's wallet and the Paystack clearing asset in one journal.
       await this.ledger.reverseJournal(
         tx,
         txn.id,
@@ -284,7 +287,7 @@ export class PaystackTransfersService {
       );
     }
 
-    const reference = `ZP-${randomUUID()}`;
+    const reference = `zp-${randomUUID()}`;
     let txn;
     try {
       txn = await this.prisma.$transaction(async (tx) => {
@@ -437,7 +440,9 @@ export class PaystackTransfersService {
   }
 
   async verify(userId: string, reference: string) {
-    this.enabled();
+    if (!process.env.PAYSTACK_SECRET_KEY) {
+      throw new ServiceUnavailableException('Paystack transfer verification is not configured.');
+    }
     const txn = await this.prisma.transaction.findFirst({
       where: { reference, userId, category: 'external_bank_transfer' },
     });
