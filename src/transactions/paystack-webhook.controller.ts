@@ -55,7 +55,17 @@ export class PaystackWebhookController {
 
     const body = req.body;
     if (typeof body?.event === 'string' && body.event.startsWith('transfer.')) {
-      const result = await this.paystackTransfers.handleWebhook(body.event, body.data || {});
+      const transferData = body.data || {};
+      if (
+        typeof transferData.reference !== 'string' ||
+        !transferData.reference ||
+        !Number.isSafeInteger(transferData.amount) ||
+        transferData.amount <= 0 ||
+        transferData.currency !== 'NGN'
+      ) {
+        throw new BadRequestException('Paystack transfer reference, amount or currency is invalid.');
+      }
+      const result = await this.paystackTransfers.handleWebhook(body.event, transferData);
       if (!result.success && result.status !== 'not_found') {
         throw new UnprocessableEntityException(
           `Paystack transfer event was not applied: ${result.status}.`,
