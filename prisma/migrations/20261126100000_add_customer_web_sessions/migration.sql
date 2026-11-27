@@ -18,3 +18,4 @@ CREATE INDEX "WebSession_expiresAt_idx" ON "WebSession"("expiresAt");
 ALTER TABLE "WebSession"
 ADD CONSTRAINT "WebSession_userId_fkey"
 FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "WebSession" ENABLE ROW LEVEL SECURITY;
