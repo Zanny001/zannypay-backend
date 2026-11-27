@@ -9,7 +9,10 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
-import { verifyPaystackSignature, verifyPaystackSigningSecret } from './paystack-signature';
+import {
+  verifyPaystackSignature,
+  verifyPaystackSigningSecret,
+} from './paystack-signature';
 
 @Controller('paystack')
 export class PaystackWebhookController {
@@ -55,7 +58,9 @@ export class PaystackWebhookController {
         throw new BadRequestException('Paystack charge reference is missing.');
       }
       if (!Number.isSafeInteger(amount) || amount <= 0 || currency !== 'NGN') {
-        throw new BadRequestException('Paystack charge amount or currency is invalid.');
+        throw new BadRequestException(
+          'Paystack charge amount or currency is invalid.',
+        );
       }
 
       const result = await this.transactionsService.handlePaystackWebhook(

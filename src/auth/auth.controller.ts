@@ -2,6 +2,7 @@ import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
+import { LoginDto } from './dto/login.dto';
 import { RequestOtpDto, ResetPinDto, VerifyOtpDto } from './dto/otp.dto';
 
 @Controller('auth')
@@ -21,7 +22,7 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  async login(@Body() body: { phone: string; pin: string }) {
+  async login(@Body() body: LoginDto) {
     return this.authService.login(body.phone, body.pin);
   }
 

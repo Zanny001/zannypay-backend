@@ -308,6 +308,7 @@ export class UserService {
           email: `${tombstone}@deleted.zannypay.local`,
           phone: tombstone,
           pin: unknowablePin,
+          tokenVersion: { increment: 1 },
           businessName: null,
           businessAccountNumber: null,
           profileImage: null,
@@ -329,6 +330,12 @@ export class UserService {
           isFrozen: true,
           deletedAt: new Date(),
         },
+      }),
+      // Run after the user-row update has acquired its lock. This also
+      // catches a browser session committed immediately before deletion.
+      this.prisma.webSession.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
       }),
     ]);
 
@@ -489,17 +496,30 @@ export class UserService {
   }
 
   async changePin(userId: string, dto: ChangePinDto) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found.');
-
-    const isOldPinValid = await bcrypt.compare(dto.oldPin, user.pin);
-    if (!isOldPinValid)
-      throw new UnauthorizedException('Your current PIN is incorrect.');
-
     const hashedNewPin = await bcrypt.hash(dto.newPin, 10);
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { pin: hashedNewPin },
+    await this.prisma.$transaction(async (tx) => {
+      // Serialize PIN changes with browser-session creation and account deletion.
+      const users = await tx.$queryRaw<
+        Array<{ id: string; pin: string; deletedAt: Date | null }>
+      >`SELECT "id", "pin", "deletedAt" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      const user = users[0];
+      if (!user || user.deletedAt) {
+        throw new NotFoundException('User not found.');
+      }
+
+      const isOldPinValid = await bcrypt.compare(dto.oldPin, user.pin);
+      if (!isOldPinValid) {
+        throw new UnauthorizedException('Your current PIN is incorrect.');
+      }
+
+      await tx.user.update({
+        where: { id: userId },
+        data: { pin: hashedNewPin, tokenVersion: { increment: 1 } },
+      });
+      await tx.webSession.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
     });
 
     return { success: true };

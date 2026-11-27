@@ -57,6 +57,23 @@ model AdminUser {
 // other devices", or a forced revoke by a SUPER_ADMIN) before its natural
 // expiry — something a bare stateless JWT cannot do, and something any
 // SOC 2 / PCI-DSS reviewer will ask how you handle.
+// Revocable opaque browser sessions for customer web clients. Only a SHA-256
+// hash of the random cookie secret is stored; the cookie itself is HttpOnly.
+model WebSession {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  userAgent String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+}
+
 model AdminSession {
   id         String    @id @default(uuid())
   adminId    String
@@ -248,6 +265,8 @@ model User {
   emailVerified Boolean       @default(false)
   phone         String        @unique
   pin           String
+  // Incremented on credential compromise/reset to revoke previously issued customer JWTs.
+  tokenVersion  Int           @default(0)
   accountNumber String        @unique
   // ZannyPay Business, Phase 1 — a second account number on the same
   // login, not a separate account/table. A dedicated BusinessProfile model
@@ -317,6 +336,7 @@ model User {
   recurringTransfers RecurringTransfer[]
   beneficiaries Beneficiary[]
   pushTokens    PushToken[]
+  webSessions   WebSession[]
   kycDocuments  KycDocument[]
   sanctionsScreenings SanctionsScreeningResult[]
   ledgerAccounts LedgerAccount[]

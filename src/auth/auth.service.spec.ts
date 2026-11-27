@@ -7,10 +7,20 @@ import { OtpService, OTP_PURPOSES } from '../otp/otp.service';
 
 describe('AuthService', () => {
   let service: AuthService;
+  const tx = {
+    $queryRaw: jest.fn(),
+    user: { update: jest.fn() },
+    webSession: { updateMany: jest.fn() },
+  };
   const prisma = {
     user: {
       findUnique: jest.fn(),
+      update: tx.user.update,
     },
+    webSession: {
+      updateMany: tx.webSession.updateMany,
+    },
+    $transaction: jest.fn(),
   };
   const otp = {
     consumeVerifiedCode: jest.fn(),
@@ -22,6 +32,10 @@ describe('AuthService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     prisma.user.findUnique.mockResolvedValue({ id: 'user-1' });
+    prisma.user.update.mockResolvedValue({});
+    prisma.webSession.updateMany.mockResolvedValue({ count: 1 });
+    tx.$queryRaw.mockResolvedValue([{ id: 'user-1', deletedAt: null }]);
+    prisma.$transaction.mockImplementation((callback) => callback(tx));
     otp.requestCode.mockResolvedValue({ sent: true, expiresInSeconds: 600 });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -78,5 +92,31 @@ describe('AuthService', () => {
     ).rejects.toThrow('A valid phone number is required.');
 
     expect(otp.requestCode).not.toHaveBeenCalled();
+  });
+
+  it('updates the PIN and revokes every active browser session atomically', async () => {
+    otp.hasVerifiedCode.mockResolvedValue(true);
+
+    await expect(
+      service.resetPin({
+        phone: '+2348000000000',
+        code: '123456',
+        newPin: '2468',
+      }),
+    ).resolves.toEqual({ reset: true });
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      data: { pin: expect.any(String), tokenVersion: { increment: 1 } },
+    });
+    expect(prisma.webSession.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(otp.consumeVerifiedCode).toHaveBeenCalledWith(
+      '+2348000000000',
+      OTP_PURPOSES.PIN_RESET,
+    );
   });
 });

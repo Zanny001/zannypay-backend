@@ -83,7 +83,11 @@ export class AuthService {
       referredBy,
     });
 
-    const payload = { sub: newUser.id, phone: newUser.phone };
+    const payload = {
+      sub: newUser.id,
+      phone: newUser.phone,
+      tokenVersion: newUser.tokenVersion ?? 0,
+    };
     const accessToken = await this.jwtService.signAsync(payload);
 
     await this.analyticsService.track(ANALYTICS_EVENTS.SIGNUP_COMPLETED, {
@@ -148,7 +152,7 @@ export class AuthService {
       } catch (error) {
         if (error.code === 'P2002') {
           const conflictField = error.meta?.target?.[0] || error.meta?.target;
-          if (conflictField === 'accountNumber') continue; // regenerate and retry
+          if (conflictField === 'accountNumber') continue;
           if (conflictField?.includes?.('phone') || conflictField === 'phone') {
             throw new ConflictException(
               'A user with this phone number already exists.',
@@ -171,20 +175,19 @@ export class AuthService {
   async login(phone: string, plainPin: string) {
     const user = await this.prisma.user.findUnique({ where: { phone } });
     if (!user) throw new UnauthorizedException('No account found.');
-    // Defense in depth: a deleted account's phone is already tombstoned
-    // (so the lookup above shouldn't find it at all), but if any future
-    // lookup path ever resolves a deleted row, it still must not log in.
     if (user.deletedAt)
       throw new UnauthorizedException('This account has been deleted.');
 
     const isPinValid = await bcrypt.compare(plainPin, user.pin);
     if (!isPinValid) throw new UnauthorizedException('Incorrect PIN.');
 
-    // Self-heals any legacy row that's still missing a referral code
-    // (rather than crashing or leaving it permanently blank).
     await ensureReferralCode(this.prisma, user);
 
-    const payload = { sub: user.id, phone: user.phone };
+    const payload = {
+      sub: user.id,
+      phone: user.phone,
+      tokenVersion: user.tokenVersion ?? 0,
+    };
     const accessToken = await this.jwtService.signAsync(payload);
 
     return {
@@ -205,11 +208,6 @@ export class AuthService {
       throw new BadRequestException('A valid phone number is required.');
     }
 
-    // PIN_RESET codes are only sent to numbers that actually have an
-    // account — otherwise the endpoint becomes an SMS-bombing tool
-    // against arbitrary phone numbers. The response is deliberately
-    // identical either way so it can't be used to enumerate which
-    // phone numbers are registered.
     if (dto.purpose === OTP_PURPOSES.PIN_RESET) {
       const user = await this.prisma.user.findUnique({
         where: { phone: dto.target },
@@ -253,10 +251,9 @@ export class AuthService {
     return { verified: true };
   }
 
-  // Forgot PIN: the OTP proves control of the phone on the account;
-  // consuming it here (not trusting a client-side "verified" flag) is
-  // what stops someone who merely knows a phone number from taking over
-  // the account.
+  // PIN reset is a credential change. Revoke all browser sessions in the
+  // same database transaction as the PIN update so a stolen cookie cannot
+  // remain valid after the owner has recovered their account.
   async resetPin(dto: ResetPinDto) {
     const user = await this.prisma.user.findUnique({
       where: { phone: dto.phone },
@@ -264,8 +261,6 @@ export class AuthService {
     if (!user)
       throw new NotFoundException('No account found for this phone number.');
 
-    // Accept either a code verified moments ago via /auth/otp/verify, or
-    // a still-pending code presented directly with this request.
     const alreadyVerified = await this.otpService.hasVerifiedCode(
       dto.phone,
       OTP_PURPOSES.PIN_RESET,
@@ -283,9 +278,21 @@ export class AuthService {
     );
 
     const hashedPin = await bcrypt.hash(dto.newPin, 10);
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { pin: hashedPin },
+    await this.prisma.$transaction(async (tx) => {
+      const lockedUsers = await tx.$queryRaw<
+        Array<{ id: string; deletedAt: Date | null }>
+      >`SELECT "id", "deletedAt" FROM "User" WHERE "id" = ${user.id} FOR UPDATE`;
+      if (!lockedUsers[0] || lockedUsers[0].deletedAt) {
+        throw new NotFoundException('This account is no longer available.');
+      }
+      await tx.user.update({
+        where: { id: user.id },
+        data: { pin: hashedPin, tokenVersion: { increment: 1 } },
+      });
+      await tx.webSession.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
     });
 
     await this.analyticsService.track(ANALYTICS_EVENTS.PIN_RESET_COMPLETED, {
