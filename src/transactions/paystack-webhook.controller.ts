@@ -9,6 +9,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
+import { PaystackTransfersService } from './paystack-transfers.service';
 import {
   verifyPaystackSignature,
   verifyPaystackSigningSecret,
@@ -16,7 +17,10 @@ import {
 
 @Controller('paystack')
 export class PaystackWebhookController {
-  constructor(private readonly transactionsService: TransactionsService) {}
+  constructor(
+    private readonly transactionsService: TransactionsService,
+    private readonly paystackTransfers: PaystackTransfersService,
+  ) {}
 
   @Post('webhook')
   async handleWebhook(@Req() req, @Res() res) {
@@ -50,6 +54,14 @@ export class PaystackWebhookController {
     }
 
     const body = req.body;
+    if (typeof body?.event === 'string' && body.event.startsWith('transfer.')) {
+      const result = await this.paystackTransfers.handleWebhook(body.event, body.data || {});
+      if (!result.success && result.status !== 'not_found') {
+        throw new UnprocessableEntityException(
+          `Paystack transfer event was not applied: ${result.status}.`,
+        );
+      }
+    }
     if (body?.event === 'charge.success') {
       const reference = body.data?.reference;
       const amount = body.data?.amount;
