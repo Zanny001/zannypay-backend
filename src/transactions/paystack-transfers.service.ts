@@ -86,13 +86,13 @@ export class PaystackTransfersService {
         return { success: false, status: 'provider_amount_mismatch' };
       }
 
-      if (txn.status === 'completed') {
+      if (txn.status === 'completed' && status !== 'failed' && status !== 'reversed') {
         return { success: true, status: 'completed', alreadyProcessed: true };
       }
       if (txn.status === 'failed') {
         return { success: status === 'failed' || status === 'reversed', status: 'failed', alreadyProcessed: true };
       }
-      if (txn.status !== 'pending') {
+      if (txn.status !== 'pending' && txn.status !== 'completed') {
         return { success: false, status: txn.status };
       }
 
@@ -122,15 +122,32 @@ export class PaystackTransfersService {
               : {}),
           },
         });
-        return updated.count === 1
-          ? { success: true, status: 'completed' }
-          : { success: false, status: 'already_settled' };
+        if (updated.count !== 1) {
+          return { success: false, status: 'already_settled' };
+        }
+        const payoutClearing = await this.ledger.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_EXTERNAL_PAYOUT_CLEARING,
+          tx,
+        );
+        const paystackClearing = await this.ledger.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_PAYSTACK_CLEARING,
+          tx,
+        );
+        await this.ledger.postJournal(
+          tx,
+          [
+            { accountId: payoutClearing.id, direction: LedgerDirection.DEBIT, amount: Number(txn.amount) },
+            { accountId: paystackClearing.id, direction: LedgerDirection.CREDIT, amount: Number(txn.amount) },
+          ],
+          { transactionId: txn.id, memo: 'Paystack payout confirmed — reduce payout float' },
+        );
+        return { success: true, status: 'completed' };
       }
 
       // A definitive failed/reversed provider result returns the reserved
       // customer funds exactly once and mirrors the original journal.
       const claimed = await tx.transaction.updateMany({
-        where: { id: txn.id, status: 'pending' },
+        where: { id: txn.id, status: { in: ['pending', 'completed'] } },
         data: {
           status: 'failed',
           providerStatus: status,
@@ -190,6 +207,10 @@ export class PaystackTransfersService {
       Math.abs(amountInKobo / 100 - amount) > 0.000001
     ) {
       throw new BadRequestException('Enter a valid transfer amount with up to two decimal places.');
+    }
+
+    if (!dto.idempotencyKey || dto.idempotencyKey.trim().length < 8) {
+      throw new BadRequestException('A unique idempotency key is required for bank transfers. Please update the app and try again.');
     }
 
     if (dto.idempotencyKey) {
@@ -298,7 +319,6 @@ export class PaystackTransfersService {
             status: 'pending',
             reference,
             ...(dto.idempotencyKey ? { idempotencyKey: dto.idempotencyKey } : {}),
-            providerRequestId: recipientCode,
             providerStatus: 'initiating',
           },
         });
@@ -381,8 +401,8 @@ export class PaystackTransfersService {
         ? providerStatus
         : 'pending';
     const settled = await this.settle(reference, acceptedStatus, {
-      amount: amountInKobo,
-      currency: 'NGN',
+      ...(Number.isSafeInteger(initiated.payload?.data?.amount) ? { amount: initiated.payload.data.amount } : {}),
+      ...(initiated.payload?.data?.currency ? { currency: initiated.payload.data.currency } : {}),
       ...(transferCode ? { transfer_code: String(transferCode) } : {}),
     });
     return {
