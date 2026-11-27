@@ -225,7 +225,8 @@ export class PaystackTransfersService {
           existing.userId !== userId ||
           existing.category !== 'external_bank_transfer' ||
           Number(existing.amount) !== amount ||
-          existing.recipientAccount !== accountNumber
+          existing.recipientAccount !== accountNumber ||
+          existing.subtitle !== `${bankCode} ••••${accountNumber.slice(-4)}`
         ) {
           throw new BadRequestException('This transfer key is already associated with another request.');
         }
@@ -390,7 +391,19 @@ export class PaystackTransfersService {
     }
 
     if (!initiated.response.ok || !initiated.payload?.status) {
-      // Paystack returned a definitive API rejection (not a transport timeout).
+      // A 5xx/429 response can still hide an accepted provider instruction.
+      // Preserve the debit as pending until verify/webhook gives a final answer.
+      if (initiated.response.status >= 500 || initiated.response.status === 429) {
+        return {
+          success: false,
+          status: 'pending',
+          transactionId: txn.id,
+          reference,
+          recipientName: resolvedName,
+          message: 'Paystack is still confirming this transfer. Do not submit it again.',
+        };
+      }
+      // A definitive provider-side validation/funding rejection is safe to refund.
       await this.settle(reference, 'failed');
       throw new BadRequestException(
         initiated.payload?.message || 'Paystack rejected this transfer instruction.',
