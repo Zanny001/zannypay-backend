@@ -172,4 +172,41 @@ describe('PaystackTransfersService', () => {
     expect(tx.transaction.updateMany).not.toHaveBeenCalled();
     expect(ledger.postJournal).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['missing amount', { currency: 'NGN' }],
+    ['missing currency', { amount: 8000 }],
+    ['missing provider data', undefined],
+  ])('fails closed for terminal payout status with %s', async (_label, providerData) => {
+    const tx = {
+      transaction: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'txn-missing-provider-fields',
+          userId: 'user-5',
+          category: 'external_bank_transfer',
+          type: 'debit',
+          status: 'pending',
+          amount: 80,
+        }),
+        updateMany: jest.fn(),
+      },
+    };
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+
+    const result = await (service as any).settle(
+      'zp-missing-provider-fields',
+      'success',
+      providerData,
+    );
+
+    expect(result).toEqual({
+      success: false,
+      status: 'provider_amount_mismatch',
+    });
+    expect(tx.transaction.updateMany).not.toHaveBeenCalled();
+    expect(ledger.postJournal).not.toHaveBeenCalled();
+    expect(tx.wallet?.update).toBeUndefined();
+  });
+
+
 });
