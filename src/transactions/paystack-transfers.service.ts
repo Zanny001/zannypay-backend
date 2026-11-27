@@ -77,13 +77,19 @@ export class PaystackTransfersService {
         return { success: false, status: 'not_found' };
       }
 
-      if (
-        providerData?.amount !== undefined &&
-        (providerData.currency !== 'NGN' ||
+      // Terminal provider states must be bound to the exact transfer
+      // amount and currency. Missing fields are not evidence of a payout.
+      // pending/otp may legitimately omit amount/currency in some Paystack
+      // responses, but success/failed/reversed must fail closed.
+      if (['success', 'failed', 'reversed'].includes(status)) {
+        if (
+          !providerData ||
+          providerData.currency !== 'NGN' ||
           !Number.isSafeInteger(providerData.amount) ||
-          providerData.amount !== Math.round(Number(txn.amount) * 100))
-      ) {
-        return { success: false, status: 'provider_amount_mismatch' };
+          providerData.amount !== Math.round(Number(txn.amount) * 100)
+        ) {
+          return { success: false, status: 'provider_amount_mismatch' };
+        }
       }
 
       if (txn.status === 'completed' && status !== 'failed' && status !== 'reversed') {
@@ -404,7 +410,13 @@ export class PaystackTransfersService {
         };
       }
       // A definitive provider-side validation/funding rejection is safe to refund.
-      await this.settle(reference, 'failed');
+      // This is a definitive synchronous Paystack validation rejection
+      // (not a webhook/verification result), so refund against the exact
+      // locally-created amount and NGN currency.
+      await this.settle(reference, 'failed', {
+        amount: amountInKobo,
+        currency: 'NGN',
+      });
       throw new BadRequestException(
         initiated.payload?.message || 'Paystack rejected this transfer instruction.',
       );
