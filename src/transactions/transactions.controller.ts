@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { TransactionsService } from './transactions.service';
+import { PaystackTransfersService } from './paystack-transfers.service';
 import { VtpassClient } from './vtpass.client';
 import { VtpassCustomerVerifyDto } from './dto/vtpass-customer-verify.dto';
 import { VtpassBillPurchaseDto } from './dto/vtpass-bill-purchase.dto';
@@ -28,6 +29,7 @@ export class TransactionsController {
     private readonly transactionsService: TransactionsService,
     private readonly vtpassClient: VtpassClient,
     private readonly vtpassPayments: VtpassPaymentsService,
+    private readonly paystackTransfers: PaystackTransfersService,
   ) {}
 
   // Read-only VTpass sandbox catalogue. This exposes provider-defined service
@@ -93,7 +95,17 @@ export class TransactionsController {
   @Post('transfer')
   async transferFunds(@Req() req, @Body() transferDto: TransferDto) {
     const userId = req.user.sub || req.user.userId;
+    if (transferDto.bank && transferDto.bank !== 'ZannyPay') {
+      return this.paystackTransfers.transfer(userId, transferDto);
+    }
     return this.transactionsService.transferFunds(userId, transferDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('transfer-status/:reference')
+  async getTransferStatus(@Req() req, @Param('reference') reference: string) {
+    const userId = req.user.sub || req.user.userId;
+    return this.paystackTransfers.verify(userId, reference);
   }
 
   @UseGuards(JwtAuthGuard)
