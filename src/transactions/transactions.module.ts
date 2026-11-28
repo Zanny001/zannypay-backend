@@ -19,5 +19,6 @@ import { PaystackBalanceReconciliationService } from './paystack-balance-reconci
     PaystackTransfersService,
     PaystackBalanceReconciliationService,
   ],
+  exports: [PaystackTransfersService],
 })
 export class TransactionsModule {}
