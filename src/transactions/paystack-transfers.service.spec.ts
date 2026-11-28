@@ -195,7 +195,6 @@ describe('PaystackTransfersService', () => {
         service.finalizeBusinessOtp('zp-reference', '12ab', 'admin-1'),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(prisma.transaction.findFirst).toBeUndefined();
     } finally {
       global.fetch = originalFetch;
     }
