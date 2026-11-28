@@ -747,6 +747,117 @@ export class PaystackTransfersService {
     return this.settle(data.reference, status, data);
   }
 
+  async finalizeBusinessOtp(reference: string, otp: string, adminId: string) {
+    this.enabled();
+    if (!/^\\d{4,8}$/.test(otp)) {
+      throw new BadRequestException('Enter the valid Paystack business approval code.');
+    }
+
+    const txn = await this.prisma.transaction.findFirst({
+      where: { reference, category: 'external_bank_transfer' },
+    });
+    if (!txn) throw new NotFoundException('Bank transfer not found.');
+    if (txn.status !== 'pending' || txn.providerStatus !== 'otp') {
+      throw new BadRequestException(
+        'This transfer is not awaiting business-owner approval. Check its latest status before taking action.',
+      );
+    }
+    if (!txn.providerTransactionId) {
+      throw new BadRequestException(
+        'The Paystack transfer code is missing. The transfer cannot be approved safely.',
+      );
+    }
+
+    const before = await this.paystack(
+      `/transfer/verify/${encodeURIComponent(reference)}`,
+    );
+    const beforeData = before.payload?.data || {};
+    if (
+      !before.response.ok ||
+      !before.payload?.status ||
+      beforeData.reference !== reference ||
+      beforeData.transfer_code !== txn.providerTransactionId ||
+      beforeData.status !== 'otp'
+    ) {
+      return {
+        success: false,
+        status: 'pending',
+        message: 'Paystack approval status could not be confirmed. No approval was submitted.',
+      };
+    }
+
+    // OTP is sent only to Paystack and is never persisted, returned, or logged.
+    const finalized = await this.paystack('/transfer/finalize_transfer', {
+      method: 'POST',
+      body: JSON.stringify({
+        transfer_code: txn.providerTransactionId,
+        otp,
+      }),
+    });
+    if (!finalized.response.ok || !finalized.payload?.status) {
+      // A failed response may be an invalid OTP or a transport/provider issue.
+      // Keep the customer reservation pending; never refund or retry automatically.
+      throw new BadRequestException(
+        'Paystack did not accept the business approval code. Check the transfer status before trying again.',
+      );
+    }
+
+    const after = await this.paystack(
+      `/transfer/verify/${encodeURIComponent(reference)}`,
+    );
+    const data = after.payload?.data || {};
+    if (
+      !after.response.ok ||
+      !after.payload?.status ||
+      data.reference !== reference ||
+      data.transfer_code !== txn.providerTransactionId
+    ) {
+      return {
+        success: false,
+        status: 'pending',
+        message: 'Approval was submitted, but Paystack has not confirmed the final status. Do not resubmit the payout.',
+      };
+    }
+
+    const status = String(data.status || 'pending') as PaystackTransferStatus;
+    const normalized: PaystackTransferStatus = [
+      'success',
+      'failed',
+      'reversed',
+      'abandoned',
+      'blocked',
+      'rejected',
+      'otp',
+    ].includes(status)
+      ? status
+      : 'pending';
+
+    if (['success', ...TERMINAL_TRANSFER_FAILURES].includes(normalized)) {
+      const verified = await this.fetchVerifiedTerminalData(
+        reference,
+        normalized,
+        txn.providerTransactionId,
+      );
+      if (!verified) {
+        return {
+          success: false,
+          status: 'pending',
+          message: 'Paystack is confirming the transfer and provider fee. Do not resubmit.',
+        };
+      }
+      return this.settle(reference, normalized, verified);
+    }
+
+    const result = await this.settle(reference, normalized, {
+      transfer_code: txn.providerTransactionId,
+      ...(Number.isSafeInteger(data.id) ? { transfer_id: data.id } : {}),
+    });
+    return {
+      ...result,
+      approvedBy: adminId,
+    };
+  }
+
   async verify(userId: string, reference: string) {
     if (!process.env.PAYSTACK_SECRET_KEY) {
       throw new ServiceUnavailableException(
