@@ -21,6 +21,7 @@ describe('PaystackBalanceReconciliationService', () => {
       },
       paystackBalanceLedgerEntry: {
         createMany: jest.fn().mockResolvedValue({ count: 2 }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     service = new PaystackBalanceReconciliationService(prisma as PrismaService);
@@ -90,6 +91,10 @@ describe('PaystackBalanceReconciliationService', () => {
     expect(prisma.paystackBalanceLedgerEntry.createMany).toHaveBeenCalledWith({
       data: expect.any(Array),
       skipDuplicates: true,
+    });
+    expect(prisma.paystackBalanceLedgerEntry.updateMany).toHaveBeenCalledWith({
+      where: { providerEntryId: '149411613' },
+      data: { matchedTransactionId: 'txn-1', reconciliationStatus: 'matched_transfer' },
     });
   });
 
