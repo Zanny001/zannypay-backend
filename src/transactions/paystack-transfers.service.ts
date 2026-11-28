@@ -152,6 +152,12 @@ export class PaystackTransfersService {
       ) {
         return { success: true, status: 'completed', alreadyProcessed: true };
       }
+      // Once Paystack has confirmed success, only an explicit reversal may
+      // return customer funds. A stale/contradictory failed, abandoned,
+      // blocked or rejected event must never refund an already-paid transfer.
+      if (txn.status === 'completed' && status !== 'reversed') {
+        return { success: false, status: 'unexpected_provider_transition' };
+      }
       if (txn.status === 'failed') {
         return {
           success: TERMINAL_TRANSFER_FAILURES.includes(status),
