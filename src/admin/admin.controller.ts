@@ -167,12 +167,15 @@ export class AdminController {
 
     await this.auditLogService.record({
       adminId: req.user.adminId,
-      action: 'PAYSTACK_TRANSFER_BUSINESS_OTP_FINALIZED',
+      action: result.success
+        ? 'PAYSTACK_TRANSFER_BUSINESS_OTP_FINALIZED'
+        : 'PAYSTACK_TRANSFER_BUSINESS_OTP_NOT_CONFIRMED',
       targetType: 'TRANSACTION',
       targetId: reference,
       metadata: {
         status: result.status,
         success: result.success,
+        outcome: result.success ? 'confirmed' : 'pending_or_unconfirmed',
       },
       ipAddress: req.ip,
     });
