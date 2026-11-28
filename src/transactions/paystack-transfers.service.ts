@@ -121,6 +121,12 @@ export class PaystackTransfersService {
         ) {
           return { success: false, status: 'provider_amount_mismatch' };
         }
+        if (
+          !Number.isSafeInteger(providerData.fee_charged) ||
+          Number(providerData.fee_charged) < 0
+        ) {
+          return { success: false, status: 'provider_fee_missing' };
+        }
       }
 
       if (
@@ -533,7 +539,12 @@ export class PaystackTransfersService {
     ].includes(providerStatus)
       ? providerStatus
       : 'pending';
-    const settled = await this.settle(reference, acceptedStatus, {
+    let terminalData: {
+      amount?: number;
+      currency?: string;
+      transfer_code?: string;
+      fee_charged?: number;
+    } = {
       ...(Number.isSafeInteger(initiated.payload?.data?.amount)
         ? { amount: initiated.payload.data.amount }
         : {}),
@@ -541,7 +552,32 @@ export class PaystackTransfersService {
         ? { currency: initiated.payload.data.currency }
         : {}),
       ...(transferCode ? { transfer_code: String(transferCode) } : {}),
-    });
+      ...(Number.isSafeInteger(initiated.payload?.data?.fee_charged)
+        ? { fee_charged: initiated.payload.data.fee_charged }
+        : {}),
+    };
+    if (
+      ['success', 'failed', 'reversed'].includes(acceptedStatus) &&
+      !Number.isSafeInteger(terminalData.fee_charged)
+    ) {
+      const verified = await this.fetchVerifiedTerminalData(
+        reference,
+        acceptedStatus,
+        transferCode ? String(transferCode) : undefined,
+      );
+      if (!verified) {
+        return {
+          success: false,
+          status: 'pending',
+          transactionId: txn.id,
+          reference,
+          recipientName: resolvedName,
+          message: 'Paystack is confirming the final transfer and fee details. Do not submit it again.',
+        };
+      }
+      terminalData = verified;
+    }
+    const settled = await this.settle(reference, acceptedStatus, terminalData);
     return {
       success: settled.status === 'completed',
       status: settled.status,
@@ -554,6 +590,37 @@ export class PaystackTransfersService {
           : settled.status === 'pending'
             ? 'Your transfer is being processed. Do not submit it again.'
             : undefined,
+    };
+  }
+
+  private async fetchVerifiedTerminalData(
+    reference: string,
+    expectedStatus: PaystackTransferStatus,
+    transferCode?: string,
+  ) {
+    const result = await this.paystack(
+      `/transfer/verify/${encodeURIComponent(reference)}`,
+    );
+    const data = result.payload?.data || {};
+    if (
+      !result.response.ok ||
+      !result.payload?.status ||
+      data.reference !== reference ||
+      data.status !== expectedStatus ||
+      !Number.isSafeInteger(data.amount) ||
+      data.currency !== 'NGN' ||
+      !Number.isSafeInteger(data.fee_charged) ||
+      data.fee_charged < 0
+    ) {
+      return null;
+    }
+    return {
+      amount: data.amount,
+      currency: data.currency,
+      fee_charged: data.fee_charged,
+      ...(data.transfer_code || transferCode
+        ? { transfer_code: data.transfer_code || transferCode }
+        : {}),
     };
   }
 
@@ -576,6 +643,20 @@ export class PaystackTransfersService {
     };
     const status = eventStatus[event];
     if (!status) return { success: true, status: 'ignored' };
+    if (['success', 'failed', 'reversed'].includes(status)) {
+      // Paystack's documented transfer webhook payload omits fee_charged.
+      // Fetch the authoritative transfer object before posting the terminal
+      // journal so the business balance movement includes the real fee.
+      const verified = await this.fetchVerifiedTerminalData(
+        data.reference,
+        status,
+        data.transfer_code,
+      );
+      if (!verified) {
+        return { success: false, status: 'provider_details_unavailable' };
+      }
+      return this.settle(data.reference, status, verified);
+    }
     return this.settle(data.reference, status, data);
   }
 
@@ -616,6 +697,9 @@ export class PaystackTransfersService {
       amount: data.amount,
       currency: data.currency,
       ...(data.transfer_code ? { transfer_code: data.transfer_code } : {}),
+      ...(Number.isSafeInteger(data.fee_charged)
+        ? { fee_charged: data.fee_charged }
+        : {}),
     });
     return { success: settled.status === 'completed', status: settled.status };
   }
