@@ -25,7 +25,6 @@ export class PaystackBalanceReconciliationService {
   @Cron('0 15 * * * *')
   async reconcileRecentBalanceLedger() {
     if (
-      process.env.PAYSTACK_TRANSFERS_ENABLED !== 'true' ||
       process.env.PAYSTACK_BALANCE_RECONCILIATION_ENABLED !== 'true' ||
       !process.env.PAYSTACK_SECRET_KEY
     ) {
