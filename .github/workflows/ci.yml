@@ -3,7 +3,7 @@ name: Backend hotfix CI
 
 on:
   push:
-    branches: ['hotfix/**']
+    branches: ['hotfix/**', 'feat/paystack-external-payouts']
   pull_request:
     branches: [main, 'feat/web-session-proxy']
 
