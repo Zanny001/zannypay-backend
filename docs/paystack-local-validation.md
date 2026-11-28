@@ -46,7 +46,7 @@ yarn install --frozen-lockfile
 yarn lint
 yarn typecheck
 yarn test --ci
-ADMIN_API_BASE_URL=http://localhost:3000 yarn build
+ADMIN_API_BASE_URL=http://localhost:10000/api/v1 yarn build
 ```
 
 Run the backend locally before exercising the UI. Confirm that the approval action is visible only for a pending external bank transfer whose provider status is `otp`, and only to an authorized finance/super-admin with mandatory 2FA enabled. Confirm the modal clears both entered codes after success and failure.
@@ -62,7 +62,7 @@ npx expo export --platform android
 npx expo export --platform web
 ```
 
-Point the local app only at the local backend or a dedicated test backend. Confirm that an unresolved attempt retains the same idempotency key after a timeout/restart, a different transfer cannot overwrite it, and a definitive rejection clears it. Confirm the customer app never requests or stores the merchant/business OTP.
+Point the local app only at the local backend or a dedicated test backend. For an Android phone on the same Wi-Fi, set `EXPO_PUBLIC_API_URL=http://<your-computer-LAN-IP>:10000/api/v1` when starting Expo (use the computer's LAN IP, not `localhost`, because localhost on the phone refers to the phone itself). For an emulator, use the emulator's host-loopback address as appropriate for that emulator. Confirm that an unresolved attempt retains the same idempotency key after a timeout/restart, a different transfer cannot overwrite it, and a definitive rejection clears it. Confirm the customer app never requests or stores the merchant/business OTP.
 
 ## 4. Paystack sandbox lifecycle
 
