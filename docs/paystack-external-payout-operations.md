@@ -27,6 +27,43 @@ The worker imports provider ledger entries and matches rows whose `model_respons
 
 This process does not post accounting journals, modify customer wallet balances, infer stamp-duty eligibility, or automatically classify unmatched charges. Finance must reconcile those movements against Paystack statements and approve their accounting treatment separately.
 
+
+## Local validation before sandbox testing
+
+Run these checks from clean feature-branch worktrees. Do not copy production `.env` files into local test runs.
+
+Backend:
+
+```bash
+npm ci
+npx prisma generate
+npm test -- --runInBand
+npm run build
+npm run lint
+```
+
+Admin dashboard:
+
+```bash
+corepack enable
+yarn install --immutable
+yarn lint
+yarn typecheck
+yarn test --runInBand
+yarn build
+```
+
+Mobile app:
+
+```bash
+npm ci
+npm test -- --runInBand
+npx expo export --platform android
+npx expo export --platform web
+```
+
+For the first local pass, keep both payout feature flags set to `false`. Run mocked provider lifecycle tests before connecting any Paystack test credentials. Never paste API secrets, merchant OTPs, customer PINs or step-up codes into chat or terminal transcripts shared for review. When a real sandbox approval is required, enter the merchant OTP only in the protected local admin approval screen.
+
 ## Required pre-live validation
 
 1. Use the Paystack test-mode transfer fixture (Zenith Bank account `1000000001`, bank code `057`) to validate account resolution, recipient creation, transfer initiation and final status. Paystack's current getting-started guide says standard test transfers complete immediately.
