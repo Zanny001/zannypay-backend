@@ -98,6 +98,39 @@ describe('PaystackTransfersService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('persists the numeric Paystack transfer ID while a payout is pending', async () => {
+    const tx = {
+      transaction: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'txn-pending-id',
+          userId: 'user-pending',
+          category: 'external_bank_transfer',
+          type: 'debit',
+          status: 'pending',
+          amount: 100,
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+
+    const result = await (service as any).settle('zp-pending-id', 'pending', {
+      transfer_code: 'TRF_test123',
+      transfer_id: 860703114,
+    });
+
+    expect(result).toEqual({ success: true, status: 'pending' });
+    expect(tx.transaction.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'txn-pending-id', status: 'pending' },
+        data: expect.objectContaining({
+          providerTransactionId: 'TRF_test123',
+          providerTransferId: '860703114',
+        }),
+      }),
+    );
+  });
+
   it('settles a confirmed payout once and posts the payout-float journal', async () => {
     const transaction = {
       id: 'txn-1',
