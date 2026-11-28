@@ -440,6 +440,11 @@ export class AdminService {
         throw new BadRequestException(
           'This transaction has already been reversed.',
         );
+      if (original.category === 'external_bank_transfer') {
+        throw new BadRequestException(
+          'External bank payouts can only be reversed after Paystack confirms a failed or reversed provider status. Use the provider verification flow; manual admin reversal is disabled.',
+        );
+      }
 
       const wallet = await tx.wallet.findUnique({
         where: { userId: original.userId },
