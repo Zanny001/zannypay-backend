@@ -14,7 +14,22 @@ import { LedgerService } from '../ledger/ledger.service';
 import { TransferDto } from './dto/transfer.dto';
 
 type PaystackTransferStatus =
-  'pending' | 'otp' | 'success' | 'failed' | 'reversed';
+  | 'pending'
+  | 'otp'
+  | 'success'
+  | 'failed'
+  | 'reversed'
+  | 'abandoned'
+  | 'blocked'
+  | 'rejected';
+
+const TERMINAL_TRANSFER_FAILURES: PaystackTransferStatus[] = [
+  'failed',
+  'reversed',
+  'abandoned',
+  'blocked',
+  'rejected',
+];
 
 @Injectable()
 export class PaystackTransfersService {
@@ -113,7 +128,7 @@ export class PaystackTransfersService {
       // amount and currency. Missing fields are not evidence of a payout.
       // pending/otp may legitimately omit amount/currency in some Paystack
       // responses, but success/failed/reversed must fail closed.
-      if (['success', 'failed', 'reversed'].includes(status)) {
+      if (['success', ...TERMINAL_TRANSFER_FAILURES].includes(status)) {
         if (
           !providerData ||
           providerData.currency !== 'NGN' ||
@@ -132,14 +147,13 @@ export class PaystackTransfersService {
 
       if (
         txn.status === 'completed' &&
-        status !== 'failed' &&
-        status !== 'reversed'
+        !TERMINAL_TRANSFER_FAILURES.includes(status)
       ) {
         return { success: true, status: 'completed', alreadyProcessed: true };
       }
       if (txn.status === 'failed') {
         return {
-          success: status === 'failed' || status === 'reversed',
+          success: TERMINAL_TRANSFER_FAILURES.includes(status),
           status: 'failed',
           alreadyProcessed: true,
         };
@@ -584,6 +598,9 @@ export class PaystackTransfersService {
       'success',
       'failed',
       'reversed',
+      'abandoned',
+      'blocked',
+      'rejected',
       'otp',
     ].includes(providerStatus)
       ? providerStatus
@@ -688,11 +705,14 @@ export class PaystackTransfersService {
       'transfer.success': 'success',
       'transfer.failed': 'failed',
       'transfer.reversed': 'reversed',
+      'transfer.abandoned': 'abandoned',
+      'transfer.blocked': 'blocked',
+      'transfer.rejected': 'rejected',
       'transfer.otp': 'otp',
     };
     const status = eventStatus[event];
     if (!status) return { success: true, status: 'ignored' };
-    if (['success', 'failed', 'reversed'].includes(status)) {
+    if (['success', ...TERMINAL_TRANSFER_FAILURES].includes(status)) {
       // Paystack's documented transfer webhook payload omits fee_charged.
       // Fetch the authoritative transfer object before posting the terminal
       // journal so the business balance movement includes the real fee.
@@ -738,6 +758,9 @@ export class PaystackTransfersService {
       'success',
       'failed',
       'reversed',
+      'abandoned',
+      'blocked',
+      'rejected',
       'otp',
     ].includes(status)
       ? status
