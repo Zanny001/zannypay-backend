@@ -111,6 +111,19 @@ export class PaystackBalanceReconciliationService {
           data: records,
           skipDuplicates: true,
         });
+        // Re-evaluate existing rows on every overlapping run. A payout's
+        // provider transfer ID may arrive after its first ledger import.
+        for (const record of records) {
+          if (record.matchedTransactionId) {
+            await this.prisma.paystackBalanceLedgerEntry.updateMany({
+              where: { providerEntryId: record.providerEntryId },
+              data: {
+                matchedTransactionId: record.matchedTransactionId,
+                reconciliationStatus: 'matched_transfer',
+              },
+            });
+          }
+        }
         imported += records.length;
         unmatched += records.filter((record) => record.reconciliationStatus === 'unmatched').length;
       }
