@@ -250,6 +250,12 @@ export class PaystackTransfersService {
           providerStatus: status,
           providerFee: Number(providerData?.fee_charged || 0) / 100,
           providerLastCheckedAt: new Date(),
+          ...(providerData?.transfer_code
+            ? { providerTransactionId: providerData.transfer_code }
+            : {}),
+          ...(providerData?.transfer_id != null
+            ? { providerTransferId: String(providerData.transfer_id) }
+            : {}),
         },
       });
       if (claimed.count !== 1) {
