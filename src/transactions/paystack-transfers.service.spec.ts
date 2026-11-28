@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { PaystackTransfersService } from './paystack-transfers.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
@@ -34,6 +34,44 @@ describe('PaystackTransfersService', () => {
       prisma as PrismaService,
       ledger as LedgerService,
     );
+  });
+
+  it('rejects a concurrent idempotency-key replay with a different destination or amount', () => {
+    const existing = {
+      userId: 'user-1',
+      category: 'external_bank_transfer',
+      amount: 100,
+      recipientAccount: '0123456789',
+      subtitle: '058 ••••6789',
+    };
+
+    expect(() =>
+      (service as any).assertReplayMatches(
+        existing,
+        'user-1',
+        100,
+        '0987654321',
+        '058',
+      ),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      (service as any).assertReplayMatches(
+        existing,
+        'user-1',
+        200,
+        '0123456789',
+        '058',
+      ),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      (service as any).assertReplayMatches(
+        existing,
+        'user-1',
+        100,
+        '0123456789',
+        '058',
+      ),
+    ).not.toThrow();
   });
 
   afterAll(() => {
