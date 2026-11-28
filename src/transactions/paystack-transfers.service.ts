@@ -749,7 +749,7 @@ export class PaystackTransfersService {
 
   async finalizeBusinessOtp(reference: string, otp: string, adminId: string) {
     this.enabled();
-    if (!/^\\d{4,8}$/.test(otp)) {
+    if (!/^\d{4,8}$/.test(otp)) {
       throw new BadRequestException('Enter the valid Paystack business approval code.');
     }
 
