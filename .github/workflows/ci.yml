@@ -1,3 +1,4 @@
+# This PR workflow also validates the protected Paystack business-OTP approval path.
 name: Backend hotfix CI
 
 on:
