@@ -7,6 +7,7 @@ import { BeneficiariesModule } from '../beneficiaries/beneficiaries.module';
 import { VtpassClient } from './vtpass.client';
 import { VtpassPaymentsService } from './vtpass-payments.service';
 import { PaystackTransfersService } from './paystack-transfers.service';
+import { PaystackBalanceReconciliationService } from './paystack-balance-reconciliation.service';
 
 @Module({
   imports: [FraudModule, BeneficiariesModule],
@@ -16,6 +17,7 @@ import { PaystackTransfersService } from './paystack-transfers.service';
     VtpassClient,
     VtpassPaymentsService,
     PaystackTransfersService,
+    PaystackBalanceReconciliationService,
   ],
 })
 export class TransactionsModule {}
