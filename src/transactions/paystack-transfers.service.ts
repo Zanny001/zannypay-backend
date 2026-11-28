@@ -96,6 +96,7 @@ export class PaystackTransfersService {
       amount?: number;
       currency?: string;
       transfer_code?: string;
+      fee_charged?: number;
     },
   ) {
     return this.prisma.$transaction(async (tx) => {
@@ -167,6 +168,7 @@ export class PaystackTransfersService {
           data: {
             status: 'completed',
             providerStatus: 'success',
+            providerFee: Number(providerData?.fee_charged || 0) / 100,
             providerLastCheckedAt: new Date(),
             ...(providerData?.transfer_code
               ? { providerTransactionId: providerData.transfer_code }
@@ -184,25 +186,37 @@ export class PaystackTransfersService {
           LedgerAccountType.SYSTEM_PAYSTACK_CLEARING,
           tx,
         );
-        await this.ledger.postJournal(
-          tx,
-          [
-            {
-              accountId: payoutClearing.id,
-              direction: LedgerDirection.DEBIT,
-              amount: Number(txn.amount),
-            },
-            {
-              accountId: paystackClearing.id,
-              direction: LedgerDirection.CREDIT,
-              amount: Number(txn.amount),
-            },
-          ],
+        const feeAmount = Number(providerData?.fee_charged || 0) / 100;
+        const journalLines = [
           {
-            transactionId: txn.id,
-            memo: 'Paystack payout confirmed — reduce payout float',
+            accountId: payoutClearing.id,
+            direction: LedgerDirection.DEBIT,
+            amount: Number(txn.amount),
           },
-        );
+          ...(feeAmount > 0
+            ? [
+                {
+                  accountId: (
+                    await this.ledger.getOrCreateSystemAccount(
+                      LedgerAccountType.SYSTEM_PROCESSOR_FEE_EXPENSE,
+                      tx,
+                    )
+                  ).id,
+                  direction: LedgerDirection.DEBIT,
+                  amount: feeAmount,
+                },
+              ]
+            : []),
+          {
+            accountId: paystackClearing.id,
+            direction: LedgerDirection.CREDIT,
+            amount: Number(txn.amount) + feeAmount,
+          },
+        ];
+        await this.ledger.postJournal(tx, journalLines, {
+          transactionId: txn.id,
+          memo: 'Paystack payout and provider fee confirmed — reduce payout float',
+        });
         return { success: true, status: 'completed' };
       }
 
@@ -213,6 +227,7 @@ export class PaystackTransfersService {
         data: {
           status: 'failed',
           providerStatus: status,
+          providerFee: Number(providerData?.fee_charged || 0) / 100,
           providerLastCheckedAt: new Date(),
         },
       });
@@ -247,6 +262,40 @@ export class PaystackTransfersService {
         reversal.id,
         `Paystack bank transfer ${status} — wallet refund`,
       );
+      // The principal is returned on reversal. Keep the actual provider fee
+      // as a platform expense unless Paystack separately refunds it.
+      const retainedFee = Number(
+        providerData?.fee_charged ?? Number(txn.providerFee || 0) * 100,
+      ) / 100;
+      if (retainedFee > 0) {
+        const feeExpense = await this.ledger.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_PROCESSOR_FEE_EXPENSE,
+          tx,
+        );
+        const paystackClearing = await this.ledger.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_PAYSTACK_CLEARING,
+          tx,
+        );
+        await this.ledger.postJournal(
+          tx,
+          [
+            {
+              accountId: feeExpense.id,
+              direction: LedgerDirection.DEBIT,
+              amount: retainedFee,
+            },
+            {
+              accountId: paystackClearing.id,
+              direction: LedgerDirection.CREDIT,
+              amount: retainedFee,
+            },
+          ],
+          {
+            transactionId: reversal.id,
+            memo: 'Retain Paystack provider fee after transfer reversal',
+          },
+        );
+      }
       return { success: true, status: 'failed', refunded: true };
     });
   }
