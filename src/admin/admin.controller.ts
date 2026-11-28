@@ -135,11 +135,36 @@ export class AdminController {
     @Param('reference') reference: string,
     @Body() dto: FinalizePaystackTransferDto,
   ) {
-    const result = await this.paystackTransfers.finalizeBusinessOtp(
-      reference,
-      dto.otp,
-      req.user.adminId,
-    );
+    // Record the privileged approval attempt before contacting Paystack.
+    // Never include the business OTP, step-up code, or request body in audit data.
+    await this.auditLogService.record({
+      adminId: req.user.adminId,
+      action: 'PAYSTACK_TRANSFER_BUSINESS_OTP_ATTEMPTED',
+      targetType: 'TRANSACTION',
+      targetId: reference,
+      metadata: { outcome: 'submitted' },
+      ipAddress: req.ip,
+    });
+
+    let result;
+    try {
+      result = await this.paystackTransfers.finalizeBusinessOtp(
+        reference,
+        dto.otp,
+        req.user.adminId,
+      );
+    } catch (error) {
+      await this.auditLogService.record({
+        adminId: req.user.adminId,
+        action: 'PAYSTACK_TRANSFER_BUSINESS_OTP_NOT_CONFIRMED',
+        targetType: 'TRANSACTION',
+        targetId: reference,
+        metadata: { outcome: 'rejected_or_uncertain' },
+        ipAddress: req.ip,
+      });
+      throw error;
+    }
+
     await this.auditLogService.record({
       adminId: req.user.adminId,
       action: 'PAYSTACK_TRANSFER_BUSINESS_OTP_FINALIZED',
