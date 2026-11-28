@@ -491,6 +491,7 @@ model Transaction {
   // before the provider call so an uncertain outcome can only be requeried.
   providerRequestId String? @unique
   providerTransactionId String?
+  providerTransferId String? @unique // Paystack numeric transfer id; joins Transfer balance-ledger rows by model_row
   providerStatus String?
   providerFee Decimal? @db.Decimal(10, 2) // actual provider fee charged, stored in NGN
   providerLastCheckedAt DateTime?
@@ -728,4 +729,24 @@ model RecurringTransfer {
 
   @@index([userId, status])
   @@index([status, nextRunAt])
+}
+
+
+model PaystackBalanceLedgerEntry {
+  providerEntryId       String   @id
+  modelResponsible      String?
+  modelRow              String?
+  currency              String
+  differenceKobo        BigInt
+  balanceKobo           BigInt
+  reason                String?
+  providerCreatedAt     DateTime
+  matchedTransactionId  String?
+  reconciliationStatus  String   @default("unmatched") // matched_transfer | unmatched; never auto-posts accounting adjustments
+  raw                   Json
+  importedAt            DateTime @default(now())
+
+  @@index([modelResponsible, modelRow])
+  @@index([providerCreatedAt])
+  @@index([reconciliationStatus, providerCreatedAt])
 }
