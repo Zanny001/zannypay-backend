@@ -10,6 +10,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AdminService } from './admin.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -128,6 +129,7 @@ export class AdminController {
   @Roles('SUPER_ADMIN', 'FINANCE_OFFICER')
   @Post('paystack/transfers/:reference/finalize')
   @UseGuards(StepUpGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async finalizePaystackTransfer(
     @Req() req,
     @Param('reference') reference: string,
