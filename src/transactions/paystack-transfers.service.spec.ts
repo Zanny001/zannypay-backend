@@ -398,6 +398,41 @@ describe('PaystackTransfersService', () => {
     },
   );
 
+  it.each(['failed', 'abandoned', 'blocked', 'rejected'] as const)(
+    'does not refund an already completed payout for a stale %s event',
+    async (status) => {
+      const tx = {
+        transaction: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: `txn-completed-${status}`,
+            userId: 'user-completed',
+            category: 'external_bank_transfer',
+            type: 'debit',
+            status: 'completed',
+            amount: 80,
+          }),
+          updateMany: jest.fn(),
+        },
+        wallet: { update: jest.fn() },
+      };
+      prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+
+      const result = await (service as any).settle(
+        `zp-completed-${status}`,
+        status,
+        { amount: 8000, currency: 'NGN', fee_charged: 0 },
+      );
+
+      expect(result).toEqual({
+        success: false,
+        status: 'unexpected_provider_transition',
+      });
+      expect(tx.transaction.updateMany).not.toHaveBeenCalled();
+      expect(tx.wallet.update).not.toHaveBeenCalled();
+      expect(ledger.reverseJournal).not.toHaveBeenCalled();
+    },
+  );
+
   it('does not apply a duplicate success webhook to an already completed payout', async () => {
     const tx = {
       transaction: {
