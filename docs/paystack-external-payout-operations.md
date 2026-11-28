@@ -7,7 +7,7 @@ Keep both flags disabled until the backend has passed sandbox lifecycle testing 
 - `PAYSTACK_TRANSFERS_ENABLED=false`
 - `PAYSTACK_BALANCE_RECONCILIATION_ENABLED=false`
 
-The reconciliation worker also requires `PAYSTACK_SECRET_KEY`. It runs hourly and imports a rolling seven-day window so late-arriving balance entries are picked up. The import is duplicate-safe.
+The reconciliation worker is independently gated by `PAYSTACK_BALANCE_RECONCILIATION_ENABLED` and requires `PAYSTACK_SECRET_KEY`; it can remain enabled for finance review even while new payouts are disabled. It runs hourly and imports a rolling seven-day window so late-arriving balance entries are picked up. The import is duplicate-safe.
 
 ## Business-owner OTP approval
 
