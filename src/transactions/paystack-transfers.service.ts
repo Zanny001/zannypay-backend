@@ -191,6 +191,9 @@ export class PaystackTransfersService {
             ...(providerData?.transfer_code
               ? { providerTransactionId: providerData.transfer_code }
               : {}),
+            ...(providerData?.transfer_id != null
+              ? { providerTransferId: String(providerData.transfer_id) }
+              : {}),
           },
         });
         if (updated.count !== 1) {
@@ -781,6 +784,7 @@ export class PaystackTransfersService {
       ...(Number.isSafeInteger(data.fee_charged)
         ? { fee_charged: data.fee_charged }
         : {}),
+      ...(Number.isSafeInteger(data.id) ? { transfer_id: data.id } : {}),
     });
     return { success: settled.status === 'completed', status: settled.status };
   }
