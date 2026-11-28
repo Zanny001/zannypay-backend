@@ -118,6 +118,7 @@ describe('PaystackTransfersService', () => {
     const result = await (service as any).settle('zp-reference', 'success', {
       amount: 10000,
       currency: 'NGN',
+      fee_charged: 250,
     });
 
     expect(result).toEqual({ success: true, status: 'completed' });
@@ -155,6 +156,7 @@ describe('PaystackTransfersService', () => {
     const result = await (service as any).settle('zp-failed', 'failed', {
       amount: 25000,
       currency: 'NGN',
+      fee_charged: 0,
     });
 
     expect(result).toEqual({ success: true, status: 'failed', refunded: true });
@@ -189,6 +191,7 @@ describe('PaystackTransfersService', () => {
     const result = await (service as any).settle('zp-completed', 'success', {
       amount: 8000,
       currency: 'NGN',
+      fee_charged: 0,
     });
 
     expect(result).toEqual({
@@ -233,6 +236,7 @@ describe('PaystackTransfersService', () => {
     ['missing amount', { currency: 'NGN' }],
     ['missing currency', { amount: 8000 }],
     ['missing provider data', undefined],
+    ['missing provider fee', { amount: 8000, currency: 'NGN' }],
   ])(
     'fails closed for terminal payout status with %s',
     async (_label, providerData) => {
@@ -259,7 +263,7 @@ describe('PaystackTransfersService', () => {
 
       expect(result).toEqual({
         success: false,
-        status: 'provider_amount_mismatch',
+        status: _label === 'missing provider fee' ? 'provider_fee_missing' : 'provider_amount_mismatch',
       });
       expect(tx.transaction.updateMany).not.toHaveBeenCalled();
       expect(ledger.postJournal).not.toHaveBeenCalled();
