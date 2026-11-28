@@ -225,6 +225,44 @@ describe('PaystackTransfersService', () => {
     );
   });
 
+  it.each(['abandoned', 'blocked', 'rejected'] as const)(
+    'refunds a conclusive %s payout status',
+    async (status) => {
+      const tx = {
+        transaction: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: `txn-${status}`,
+            userId: 'user-terminal',
+            category: 'external_bank_transfer',
+            type: 'debit',
+            status: 'pending',
+            amount: 75,
+          }),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          create: jest.fn().mockResolvedValue({ id: `reversal-${status}` }),
+        },
+        wallet: { update: jest.fn() },
+      };
+      prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+
+      const result = await (service as any).settle(
+        `zp-${status}`,
+        status,
+        { amount: 7500, currency: 'NGN', fee_charged: 0 },
+      );
+
+      expect(result).toEqual({
+        success: true,
+        status: 'failed',
+        refunded: true,
+      });
+      expect(tx.wallet.update).toHaveBeenCalledWith({
+        where: { userId: 'user-terminal' },
+        data: { balance: { increment: 75 } },
+      });
+    },
+  );
+
   it('does not apply a duplicate success webhook to an already completed payout', async () => {
     const tx = {
       transaction: {
