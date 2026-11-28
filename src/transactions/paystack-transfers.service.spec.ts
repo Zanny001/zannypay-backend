@@ -98,6 +98,109 @@ describe('PaystackTransfersService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('finalizes business-owner OTP only for an OTP-pending transfer and rechecks provider status', async () => {
+    process.env.PAYSTACK_TRANSFERS_ENABLED = 'true';
+    process.env.PAYSTACK_SECRET_KEY = 'sk_test_only';
+    const transaction = {
+      id: 'txn-otp',
+      userId: 'customer-1',
+      category: 'external_bank_transfer',
+      type: 'debit',
+      status: 'pending',
+      providerStatus: 'otp',
+      providerTransactionId: 'TRF_otp123',
+      amount: 100,
+    };
+    prisma.transaction = {
+      findFirst: jest.fn().mockResolvedValue(transaction),
+    };
+    const tx = {
+      transaction: {
+        findUnique: jest.fn().mockResolvedValue(transaction),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+    const originalFetch = global.fetch;
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: true,
+          data: {
+            reference: 'zp-otp-reference',
+            transfer_code: 'TRF_otp123',
+            status: 'otp',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ status: true, message: 'Transfer has been queued' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: true,
+          data: {
+            reference: 'zp-otp-reference',
+            transfer_code: 'TRF_otp123',
+            id: 860703114,
+            status: 'pending',
+          },
+        }),
+      });
+    global.fetch = fetchMock as any;
+
+    try {
+      const result = await service.finalizeBusinessOtp(
+        'zp-otp-reference',
+        '123456',
+        'admin-1',
+      );
+
+      expect(result).toEqual({
+        success: true,
+        status: 'pending',
+        approvedBy: 'admin-1',
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls[1][0]).toContain('/transfer/finalize_transfer');
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+        transfer_code: 'TRF_otp123',
+        otp: '123456',
+      });
+      expect(tx.transaction.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            providerStatus: 'pending',
+            providerTransferId: '860703114',
+          }),
+        }),
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('rejects malformed business OTP before contacting Paystack', async () => {
+    process.env.PAYSTACK_TRANSFERS_ENABLED = 'true';
+    process.env.PAYSTACK_SECRET_KEY = 'sk_test_only';
+    const originalFetch = global.fetch;
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as any;
+    try {
+      await expect(
+        service.finalizeBusinessOtp('zp-reference', '12ab', 'admin-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(prisma.transaction.findFirst).toBeUndefined();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('persists the numeric Paystack transfer ID while a payout is pending', async () => {
     const tx = {
       transaction: {
