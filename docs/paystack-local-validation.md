@@ -8,6 +8,8 @@ This runbook is for local development and Paystack test mode only. It does not a
 - Never paste API keys, passwords, customer PINs, TOTP codes, recovery codes, or Paystack business OTPs into chat, terminal transcripts, test fixtures, screenshots, or Git.
 - Keep `PAYSTACK_TRANSFERS_ENABLED=false` and `PAYSTACK_BALANCE_RECONCILIATION_ENABLED=false` until the relevant test stage explicitly requires them in a disposable local environment.
 - Do not point local code at production Supabase or a live Paystack secret.
+- Copy `.env.example` to `.env`, then generate fresh local-only values for `JWT_SECRET`, `ADMIN_JWT_SECRET`, `ADMIN_BOOTSTRAP_SECRET`, `ADMIN_2FA_ENCRYPTION_KEY`, and `CUSTOMER_PII_ENCRYPTION_KEY`. The admin 2FA and customer PII encryption keys must be different. Generate 32-byte random values locally (for the two encryption keys, use 64 hex characters); never commit the generated `.env`.
+- The example file previously contained static sample admin secrets. They have now been replaced with placeholders. If any of those old sample values were ever used in a real environment, rotate the affected secret/key there through the approved secret-management process; changing the example file does not erase Git history.
 - Use a non-production admin account with mandatory 2FA for protected approval testing. Enter any provider OTP directly into the local protected admin form; do not share it.
 - The standard Paystack test transfer may complete immediately and may not trigger a business OTP. OTP approval is therefore covered by controlled provider mocks unless Paystack explicitly enables the challenge for the test integration.
 
