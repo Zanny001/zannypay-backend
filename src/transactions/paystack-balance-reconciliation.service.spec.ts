@@ -98,6 +98,22 @@ describe('PaystackBalanceReconciliationService', () => {
     });
   });
 
+  it('continues reconciliation when new payouts are disabled', async () => {
+    process.env.PAYSTACK_TRANSFERS_ENABLED = 'false';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: true,
+        data: [],
+        meta: { page: 1, pageCount: 0, perPage: 100, total: 0, skipped: 0 },
+      }),
+    } as any);
+
+    await service.reconcileRecentBalanceLedger();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('does not call Paystack when reconciliation is disabled', async () => {
     process.env.PAYSTACK_BALANCE_RECONCILIATION_ENABLED = 'false';
     global.fetch = jest.fn();
