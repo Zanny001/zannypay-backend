@@ -36,6 +36,32 @@ export class PaystackTransfersService {
     }
   }
 
+  private assertReplayMatches(
+    existing: {
+      userId: string;
+      category: string;
+      amount: unknown;
+      recipientAccount: string | null;
+      subtitle: string;
+    },
+    userId: string,
+    amount: number,
+    accountNumber: string,
+    bankCode: string,
+  ) {
+    if (
+      existing.userId !== userId ||
+      existing.category !== 'external_bank_transfer' ||
+      Number(existing.amount) !== amount ||
+      existing.recipientAccount !== accountNumber ||
+      existing.subtitle !== `${bankCode} ••••${accountNumber.slice(-4)}`
+    ) {
+      throw new BadRequestException(
+        'This transfer key is already associated with another request.',
+      );
+    }
+  }
+
   private headers() {
     return {
       Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
@@ -257,17 +283,13 @@ export class PaystackTransfersService {
         where: { idempotencyKey: dto.idempotencyKey },
       });
       if (existing) {
-        if (
-          existing.userId !== userId ||
-          existing.category !== 'external_bank_transfer' ||
-          Number(existing.amount) !== amount ||
-          existing.recipientAccount !== accountNumber ||
-          existing.subtitle !== `${bankCode} ••••${accountNumber.slice(-4)}`
-        ) {
-          throw new BadRequestException(
-            'This transfer key is already associated with another request.',
-          );
-        }
+        this.assertReplayMatches(
+          existing,
+          userId,
+          amount,
+          accountNumber,
+          bankCode,
+        );
         return {
           success: existing.status === 'completed',
           status: existing.status,
@@ -420,7 +442,14 @@ export class PaystackTransfersService {
         const existing = await this.prisma.transaction.findUnique({
           where: { idempotencyKey: dto.idempotencyKey },
         });
-        if (existing && existing.userId === userId) {
+        if (existing) {
+          this.assertReplayMatches(
+            existing,
+            userId,
+            amount,
+            accountNumber,
+            bankCode,
+          );
           return {
             success: existing.status === 'completed',
             status: existing.status,
