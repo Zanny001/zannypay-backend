@@ -596,6 +596,9 @@ export class PaystackTransfersService {
       await this.settle(reference, 'failed', {
         amount: amountInKobo,
         currency: 'NGN',
+        // The transfer instruction was synchronously rejected before Paystack
+        // accepted a transfer, so no transfer-processing fee was incurred.
+        fee_charged: 0,
       });
       throw new BadRequestException(
         initiated.payload?.message ||
