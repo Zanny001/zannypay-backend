@@ -102,7 +102,17 @@ export class PaystackBalanceReconciliationService {
           providerCreatedAt: new Date(row.createdAt),
           matchedTransactionId,
           reconciliationStatus: matchedTransactionId ? 'matched_transfer' : 'unmatched',
-          raw: row as any,
+          raw: {
+            id: row.id,
+            currency: row.currency,
+            difference: row.difference,
+            balance: row.balance,
+            reason: row.reason ?? null,
+            model_responsible: row.model_responsible ?? null,
+            model_row: modelRow,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt ?? null,
+          },
         };
       });
 
