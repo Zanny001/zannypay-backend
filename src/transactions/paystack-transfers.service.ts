@@ -1,0 +1,917 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { LedgerAccountType, LedgerDirection } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
+import { PrismaService } from '../prisma/prisma.service';
+import { LedgerService } from '../ledger/ledger.service';
+import { TransferDto } from './dto/transfer.dto';
+
+type PaystackTransferStatus =
+  | 'pending'
+  | 'otp'
+  | 'success'
+  | 'failed'
+  | 'reversed'
+  | 'abandoned'
+  | 'blocked'
+  | 'rejected';
+
+const TERMINAL_TRANSFER_FAILURES: PaystackTransferStatus[] = [
+  'failed',
+  'reversed',
+  'abandoned',
+  'blocked',
+  'rejected',
+];
+
+@Injectable()
+export class PaystackTransfersService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ledger: LedgerService,
+  ) {}
+
+  private enabled() {
+    if (process.env.PAYSTACK_TRANSFERS_ENABLED !== 'true') {
+      throw new ServiceUnavailableException(
+        'External bank transfers are not enabled yet. Please use ZannyPay transfers or try again later.',
+      );
+    }
+    if (!process.env.PAYSTACK_SECRET_KEY) {
+      throw new ServiceUnavailableException(
+        'Bank payouts are not configured. Please try again later.',
+      );
+    }
+  }
+
+  private assertReplayMatches(
+    existing: {
+      userId: string;
+      category: string;
+      amount: unknown;
+      recipientAccount: string | null;
+      subtitle: string;
+    },
+    userId: string,
+    amount: number,
+    accountNumber: string,
+    bankCode: string,
+  ) {
+    if (
+      existing.userId !== userId ||
+      existing.category !== 'external_bank_transfer' ||
+      Number(existing.amount) !== amount ||
+      existing.recipientAccount !== accountNumber ||
+      existing.subtitle !== `${bankCode} ••••${accountNumber.slice(-4)}`
+    ) {
+      throw new BadRequestException(
+        'This transfer key is already associated with another request.',
+      );
+    }
+  }
+
+  private headers() {
+    return {
+      Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      'Content-Type': 'application/json',
+    };
+  }
+
+  private async paystack(path: string, init?: RequestInit) {
+    let response: Response;
+    let payload: any;
+    try {
+      response = await fetch(`https://api.paystack.co${path}`, {
+        ...init,
+        headers: { ...this.headers(), ...(init?.headers || {}) },
+        signal: init?.signal || AbortSignal.timeout(15000),
+      });
+      payload = await response.json();
+    } catch {
+      // A timeout after POST /transfer is ambiguous. The caller must retain
+      // the pending reference and verify it; it must never submit a new payout.
+      throw new ServiceUnavailableException(
+        'Paystack could not be reached. The transfer status will remain pending while it is checked.',
+      );
+    }
+    return { response, payload };
+  }
+
+  private async settle(
+    reference: string,
+    status: PaystackTransferStatus,
+    providerData?: {
+      amount?: number;
+      currency?: string;
+      transfer_code?: string;
+      fee_charged?: number;
+      transfer_id?: number | string;
+    },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const txn = await tx.transaction.findUnique({ where: { reference } });
+      if (
+        !txn ||
+        txn.category !== 'external_bank_transfer' ||
+        txn.type !== 'debit'
+      ) {
+        return { success: false, status: 'not_found' };
+      }
+
+      // Terminal provider states must be bound to the exact transfer
+      // amount and currency. Missing fields are not evidence of a payout.
+      // pending/otp may legitimately omit amount/currency in some Paystack
+      // responses, but success/failed/reversed must fail closed.
+      if (['success', ...TERMINAL_TRANSFER_FAILURES].includes(status)) {
+        if (
+          !providerData ||
+          providerData.currency !== 'NGN' ||
+          !Number.isSafeInteger(providerData.amount) ||
+          providerData.amount !== Math.round(Number(txn.amount) * 100)
+        ) {
+          return { success: false, status: 'provider_amount_mismatch' };
+        }
+        if (
+          !Number.isSafeInteger(providerData.fee_charged) ||
+          Number(providerData.fee_charged) < 0
+        ) {
+          return { success: false, status: 'provider_fee_missing' };
+        }
+      }
+
+      if (
+        txn.status === 'completed' &&
+        !TERMINAL_TRANSFER_FAILURES.includes(status)
+      ) {
+        return { success: true, status: 'completed', alreadyProcessed: true };
+      }
+      // Once Paystack has confirmed success, only an explicit reversal may
+      // return customer funds. A stale/contradictory failed, abandoned,
+      // blocked or rejected event must never refund an already-paid transfer.
+      if (txn.status === 'completed' && status !== 'reversed') {
+        return { success: false, status: 'unexpected_provider_transition' };
+      }
+      if (txn.status === 'failed') {
+        return {
+          success: TERMINAL_TRANSFER_FAILURES.includes(status),
+          status: 'failed',
+          alreadyProcessed: true,
+        };
+      }
+      if (txn.status !== 'pending' && txn.status !== 'completed') {
+        return { success: false, status: txn.status };
+      }
+
+      if (status === 'pending' || status === 'otp') {
+        await tx.transaction.updateMany({
+          where: { id: txn.id, status: 'pending' },
+          data: {
+            providerStatus: status,
+            providerLastCheckedAt: new Date(),
+            ...(providerData?.transfer_code
+              ? { providerTransactionId: providerData.transfer_code }
+              : {}),
+            ...(providerData?.transfer_id != null
+              ? { providerTransferId: String(providerData.transfer_id) }
+              : {}),
+          },
+        });
+        return { success: true, status };
+      }
+
+      if (status === 'success') {
+        const updated = await tx.transaction.updateMany({
+          where: { id: txn.id, status: 'pending' },
+          data: {
+            status: 'completed',
+            providerStatus: 'success',
+            providerFee: Number(providerData?.fee_charged || 0) / 100,
+            providerLastCheckedAt: new Date(),
+            ...(providerData?.transfer_code
+              ? { providerTransactionId: providerData.transfer_code }
+              : {}),
+            ...(providerData?.transfer_id != null
+              ? { providerTransferId: String(providerData.transfer_id) }
+              : {}),
+          },
+        });
+        if (updated.count !== 1) {
+          return { success: false, status: 'already_settled' };
+        }
+        const payoutClearing = await this.ledger.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_EXTERNAL_PAYOUT_CLEARING,
+          tx,
+        );
+        const paystackClearing = await this.ledger.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_PAYSTACK_CLEARING,
+          tx,
+        );
+        const feeAmount = Number(providerData?.fee_charged || 0) / 100;
+        const journalLines = [
+          {
+            accountId: payoutClearing.id,
+            direction: LedgerDirection.DEBIT,
+            amount: Number(txn.amount),
+          },
+          ...(feeAmount > 0
+            ? [
+                {
+                  accountId: (
+                    await this.ledger.getOrCreateSystemAccount(
+                      LedgerAccountType.SYSTEM_PROCESSOR_FEE_EXPENSE,
+                      tx,
+                    )
+                  ).id,
+                  direction: LedgerDirection.DEBIT,
+                  amount: feeAmount,
+                },
+              ]
+            : []),
+          {
+            accountId: paystackClearing.id,
+            direction: LedgerDirection.CREDIT,
+            amount: Number(txn.amount) + feeAmount,
+          },
+        ];
+        await this.ledger.postJournal(tx, journalLines, {
+          transactionId: txn.id,
+          memo: 'Paystack payout and provider fee confirmed — reduce payout float',
+        });
+        return { success: true, status: 'completed' };
+      }
+
+      // A definitive failed/reversed provider result returns the reserved
+      // customer funds exactly once and mirrors the original journal.
+      const claimed = await tx.transaction.updateMany({
+        where: { id: txn.id, status: { in: ['pending', 'completed'] } },
+        data: {
+          status: 'failed',
+          providerStatus: status,
+          providerFee: Number(providerData?.fee_charged || 0) / 100,
+          providerLastCheckedAt: new Date(),
+          ...(providerData?.transfer_code
+            ? { providerTransactionId: providerData.transfer_code }
+            : {}),
+          ...(providerData?.transfer_id != null
+            ? { providerTransferId: String(providerData.transfer_id) }
+            : {}),
+        },
+      });
+      if (claimed.count !== 1) {
+        return { success: false, status: 'already_settled' };
+      }
+
+      await tx.wallet.update({
+        where: { userId: txn.userId },
+        data: { balance: { increment: txn.amount } },
+      });
+      const reversal = await tx.transaction.create({
+        data: {
+          userId: txn.userId,
+          type: 'credit',
+          category: 'transfer_reversal',
+          title: 'Bank transfer reversal',
+          subtitle: `Reversal for ${reference}`,
+          amount: txn.amount,
+          status: 'completed',
+          reference: `REV-${randomUUID()}`,
+          reversedTransactionId: txn.id,
+          reversalReason: `Paystack transfer ${status}`,
+        },
+      });
+      // reverseJournal inverts both the initial wallet reservation and the
+      // payout-float settlement (when already completed), restoring the
+      // customer's wallet and the Paystack clearing asset in one journal.
+      await this.ledger.reverseJournal(
+        tx,
+        txn.id,
+        reversal.id,
+        `Paystack bank transfer ${status} — wallet refund`,
+      );
+      // The principal is returned on reversal. Keep the actual provider fee
+      // as a platform expense unless Paystack separately refunds it.
+      const retainedFee = Number(
+        providerData?.fee_charged ?? Number(txn.providerFee || 0) * 100,
+      ) / 100;
+      if (retainedFee > 0) {
+        const feeExpense = await this.ledger.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_PROCESSOR_FEE_EXPENSE,
+          tx,
+        );
+        const paystackClearing = await this.ledger.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_PAYSTACK_CLEARING,
+          tx,
+        );
+        await this.ledger.postJournal(
+          tx,
+          [
+            {
+              accountId: feeExpense.id,
+              direction: LedgerDirection.DEBIT,
+              amount: retainedFee,
+            },
+            {
+              accountId: paystackClearing.id,
+              direction: LedgerDirection.CREDIT,
+              amount: retainedFee,
+            },
+          ],
+          {
+            transactionId: reversal.id,
+            memo: 'Retain Paystack provider fee after transfer reversal',
+          },
+        );
+      }
+      return { success: true, status: 'failed', refunded: true };
+    });
+  }
+
+  async transfer(userId: string, dto: TransferDto) {
+    this.enabled();
+
+    const accountNumber = String(dto.recipientAccount || '').trim();
+    const bankCode = String(dto.bankCode || '').trim();
+    const amount = Number(dto.amount);
+    const amountInKobo = Math.round(amount * 100);
+    if (!/^\d{10}$/.test(accountNumber)) {
+      throw new BadRequestException(
+        'Enter a valid 10-digit bank account number.',
+      );
+    }
+    if (!/^\d{2,8}$/.test(bankCode)) {
+      throw new BadRequestException('Select a valid destination bank.');
+    }
+    if (
+      !Number.isFinite(amount) ||
+      amount < 1 ||
+      amount > 10000000 ||
+      !Number.isSafeInteger(amountInKobo) ||
+      Math.abs(amountInKobo / 100 - amount) > 0.000001
+    ) {
+      throw new BadRequestException(
+        'Enter a valid transfer amount with up to two decimal places.',
+      );
+    }
+
+    if (!dto.idempotencyKey || dto.idempotencyKey.trim().length < 8) {
+      throw new BadRequestException(
+        'A unique idempotency key is required for bank transfers. Please update the app and try again.',
+      );
+    }
+
+    if (dto.idempotencyKey) {
+      const existing = await this.prisma.transaction.findUnique({
+        where: { idempotencyKey: dto.idempotencyKey },
+      });
+      if (existing) {
+        this.assertReplayMatches(
+          existing,
+          userId,
+          amount,
+          accountNumber,
+          bankCode,
+        );
+        return {
+          success: existing.status === 'completed',
+          status: existing.status,
+          transactionId: existing.id,
+          reference: existing.reference,
+          replayed: true,
+        };
+      }
+    }
+
+    const sender = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { wallet: true },
+    });
+    if (!sender) throw new NotFoundException('Sender account not found.');
+    if (sender.isFrozen) {
+      throw new ForbiddenException(
+        'Your account is currently restricted. Please contact support.',
+      );
+    }
+    if (!(await bcrypt.compare(dto.pin, sender.pin))) {
+      throw new UnauthorizedException('Incorrect PIN.');
+    }
+    if (Number(sender.wallet.balance) < amount) {
+      throw new BadRequestException('Insufficient funds.');
+    }
+
+    // Resolve the account again server-side; client-supplied names are never
+    // trusted as the payout destination identity.
+    const resolve = await this.paystack(
+      `/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`,
+    );
+    const resolvedName = String(
+      resolve.payload?.data?.account_name || '',
+    ).trim();
+    if (!resolve.response.ok || !resolve.payload?.status || !resolvedName) {
+      throw new BadRequestException(
+        resolve.payload?.message ||
+          'We could not verify this account at the selected bank.',
+      );
+    }
+    const resolvedAccount = String(
+      resolve.payload.data.account_number || accountNumber,
+    );
+    if (resolvedAccount !== accountNumber) {
+      throw new BadRequestException(
+        'The verified account number does not match the entered account number.',
+      );
+    }
+
+    const recipient = await this.paystack('/transferrecipient', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'nuban',
+        name: resolvedName,
+        account_number: accountNumber,
+        bank_code: bankCode,
+        currency: 'NGN',
+      }),
+    });
+    const recipientCode = recipient.payload?.data?.recipient_code;
+    if (
+      !recipient.response.ok ||
+      !recipient.payload?.status ||
+      typeof recipientCode !== 'string'
+    ) {
+      throw new ServiceUnavailableException(
+        recipient.payload?.message ||
+          'Paystack could not prepare this bank recipient.',
+      );
+    }
+
+    const reference = `zp-${randomUUID()}`;
+    let txn;
+    try {
+      txn = await this.prisma.$transaction(async (tx) => {
+        const freshSender = await tx.user.findUnique({
+          where: { id: userId },
+          include: { wallet: true },
+        });
+        if (!freshSender)
+          throw new NotFoundException('Sender account not found.');
+        if (freshSender.isFrozen) {
+          throw new ForbiddenException(
+            'Your account is currently restricted. Please contact support.',
+          );
+        }
+        if (!(await bcrypt.compare(dto.pin, freshSender.pin))) {
+          throw new UnauthorizedException('Incorrect PIN.');
+        }
+
+        const debit = await tx.wallet.updateMany({
+          where: { userId, balance: { gte: amount } },
+          data: { balance: { decrement: amount } },
+        });
+        if (debit.count !== 1)
+          throw new BadRequestException('Insufficient funds.');
+
+        const transaction = await tx.transaction.create({
+          data: {
+            userId,
+            type: 'debit',
+            category: 'external_bank_transfer',
+            title: `Bank transfer to ${resolvedName}`,
+            subtitle: `${bankCode} ••••${accountNumber.slice(-4)}`,
+            amount,
+            bank: dto.bank || resolve.payload.data.bank_name || null,
+            recipientAccount: accountNumber,
+            status: 'pending',
+            reference,
+            ...(dto.idempotencyKey
+              ? { idempotencyKey: dto.idempotencyKey }
+              : {}),
+            providerStatus: 'initiating',
+          },
+        });
+
+        const walletAccount = await this.ledger.getOrCreateCustomerAccount(
+          LedgerAccountType.CUSTOMER_WALLET,
+          userId,
+          tx,
+        );
+        const payoutClearing = await this.ledger.getOrCreateSystemAccount(
+          LedgerAccountType.SYSTEM_EXTERNAL_PAYOUT_CLEARING,
+          tx,
+        );
+        await this.ledger.postJournal(
+          tx,
+          [
+            {
+              accountId: walletAccount.id,
+              direction: LedgerDirection.DEBIT,
+              amount,
+            },
+            {
+              accountId: payoutClearing.id,
+              direction: LedgerDirection.CREDIT,
+              amount,
+            },
+          ],
+          {
+            transactionId: transaction.id,
+            memo: `External bank transfer to ${resolvedName}`,
+          },
+        );
+        return transaction;
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002' && dto.idempotencyKey) {
+        const existing = await this.prisma.transaction.findUnique({
+          where: { idempotencyKey: dto.idempotencyKey },
+        });
+        if (existing) {
+          this.assertReplayMatches(
+            existing,
+            userId,
+            amount,
+            accountNumber,
+            bankCode,
+          );
+          return {
+            success: existing.status === 'completed',
+            status: existing.status,
+            transactionId: existing.id,
+            reference: existing.reference,
+            replayed: true,
+          };
+        }
+      }
+      throw error;
+    }
+
+    let initiated;
+    try {
+      initiated = await this.paystack('/transfer', {
+        method: 'POST',
+        body: JSON.stringify({
+          source: 'balance',
+          amount: amountInKobo,
+          recipient: recipientCode,
+          reference,
+          currency: 'NGN',
+          reason: String(
+            dto.note || `ZannyPay transfer to ${resolvedName}`,
+          ).slice(0, 100),
+        }),
+      });
+    } catch {
+      // Do not refund or retry an ambiguous POST. A status check/webhook must
+      // establish whether Paystack accepted the instruction.
+      return {
+        success: false,
+        status: 'pending',
+        transactionId: txn.id,
+        reference,
+        recipientName: resolvedName,
+        message: 'Your transfer is being confirmed. Do not submit it again.',
+      };
+    }
+
+    if (!initiated.response.ok || !initiated.payload?.status) {
+      // A 5xx/429 response can still hide an accepted provider instruction.
+      // Preserve the debit as pending until verify/webhook gives a final answer.
+      if (
+        initiated.response.status >= 500 ||
+        initiated.response.status === 429
+      ) {
+        return {
+          success: false,
+          status: 'pending',
+          transactionId: txn.id,
+          reference,
+          recipientName: resolvedName,
+          message:
+            'Paystack is still confirming this transfer. Do not submit it again.',
+        };
+      }
+      // A definitive provider-side validation/funding rejection is safe to refund.
+      // This is a definitive synchronous Paystack validation rejection
+      // (not a webhook/verification result), so refund against the exact
+      // locally-created amount and NGN currency.
+      await this.settle(reference, 'failed', {
+        amount: amountInKobo,
+        currency: 'NGN',
+        // The transfer instruction was synchronously rejected before Paystack
+        // accepted a transfer, so no transfer-processing fee was incurred.
+        fee_charged: 0,
+      });
+      throw new BadRequestException(
+        initiated.payload?.message ||
+          'Paystack rejected this transfer instruction.',
+      );
+    }
+
+    const providerStatus = String(
+      initiated.payload?.data?.status || 'pending',
+    ) as PaystackTransferStatus;
+    const transferCode = initiated.payload?.data?.transfer_code;
+    const acceptedStatus: PaystackTransferStatus = [
+      'success',
+      'failed',
+      'reversed',
+      'abandoned',
+      'blocked',
+      'rejected',
+      'otp',
+    ].includes(providerStatus)
+      ? providerStatus
+      : 'pending';
+    let terminalData: {
+      amount?: number;
+      currency?: string;
+      transfer_code?: string;
+      fee_charged?: number;
+      transfer_id?: number | string;
+    } = {
+      ...(Number.isSafeInteger(initiated.payload?.data?.amount)
+        ? { amount: initiated.payload.data.amount }
+        : {}),
+      ...(initiated.payload?.data?.currency
+        ? { currency: initiated.payload.data.currency }
+        : {}),
+      ...(transferCode ? { transfer_code: String(transferCode) } : {}),
+      ...(Number.isSafeInteger(initiated.payload?.data?.id)
+        ? { transfer_id: initiated.payload.data.id }
+        : {}),
+      ...(Number.isSafeInteger(initiated.payload?.data?.fee_charged)
+        ? { fee_charged: initiated.payload.data.fee_charged }
+        : {}),
+    };
+    if (
+      ['success', ...TERMINAL_TRANSFER_FAILURES].includes(acceptedStatus) &&
+      !Number.isSafeInteger(terminalData.fee_charged)
+    ) {
+      const verified = await this.fetchVerifiedTerminalData(
+        reference,
+        acceptedStatus,
+        transferCode ? String(transferCode) : undefined,
+      );
+      if (!verified) {
+        return {
+          success: false,
+          status: 'pending',
+          transactionId: txn.id,
+          reference,
+          recipientName: resolvedName,
+          message: 'Paystack is confirming the final transfer and fee details. Do not submit it again.',
+        };
+      }
+      terminalData = verified;
+    }
+    const settled = await this.settle(reference, acceptedStatus, terminalData);
+    return {
+      success: settled.status === 'completed',
+      status: settled.status,
+      transactionId: txn.id,
+      reference,
+      recipientName: resolvedName,
+      message:
+        acceptedStatus === 'otp'
+          ? 'The payout is awaiting Paystack business-owner authorization.'
+          : settled.status === 'pending'
+            ? 'Your transfer is being processed. Do not submit it again.'
+            : undefined,
+    };
+  }
+
+  private async fetchVerifiedTerminalData(
+    reference: string,
+    expectedStatus: PaystackTransferStatus,
+    transferCode?: string,
+  ) {
+    const result = await this.paystack(
+      `/transfer/verify/${encodeURIComponent(reference)}`,
+    );
+    const data = result.payload?.data || {};
+    if (
+      !result.response.ok ||
+      !result.payload?.status ||
+      data.reference !== reference ||
+      data.status !== expectedStatus ||
+      !Number.isSafeInteger(data.amount) ||
+      data.currency !== 'NGN' ||
+      !Number.isSafeInteger(data.fee_charged) ||
+      data.fee_charged < 0
+    ) {
+      return null;
+    }
+    return {
+      amount: data.amount,
+      currency: data.currency,
+      fee_charged: data.fee_charged,
+      ...(Number.isSafeInteger(data.id) ? { transfer_id: data.id } : {}),
+      ...(data.transfer_code || transferCode
+        ? { transfer_code: data.transfer_code || transferCode }
+        : {}),
+    };
+  }
+
+  async handleWebhook(
+    event: string,
+    data: {
+      reference?: string;
+      amount?: number;
+      currency?: string;
+      transfer_code?: string;
+    },
+  ) {
+    if (!data?.reference)
+      return { success: false, status: 'missing_reference' };
+    const eventStatus: Record<string, PaystackTransferStatus> = {
+      'transfer.success': 'success',
+      'transfer.failed': 'failed',
+      'transfer.reversed': 'reversed',
+      'transfer.abandoned': 'abandoned',
+      'transfer.blocked': 'blocked',
+      'transfer.rejected': 'rejected',
+      'transfer.otp': 'otp',
+    };
+    const status = eventStatus[event];
+    if (!status) return { success: true, status: 'ignored' };
+    if (['success', ...TERMINAL_TRANSFER_FAILURES].includes(status)) {
+      // Paystack's documented transfer webhook payload omits fee_charged.
+      // Fetch the authoritative transfer object before posting the terminal
+      // journal so the business balance movement includes the real fee.
+      const verified = await this.fetchVerifiedTerminalData(
+        data.reference,
+        status,
+        data.transfer_code,
+      );
+      if (!verified) {
+        return { success: false, status: 'provider_details_unavailable' };
+      }
+      return this.settle(data.reference, status, verified);
+    }
+    return this.settle(data.reference, status, data);
+  }
+
+  async finalizeBusinessOtp(reference: string, otp: string, adminId: string) {
+    this.enabled();
+    if (!/^\d{4,8}$/.test(otp)) {
+      throw new BadRequestException('Enter the valid Paystack business approval code.');
+    }
+
+    const txn = await this.prisma.transaction.findFirst({
+      where: { reference, category: 'external_bank_transfer' },
+    });
+    if (!txn) throw new NotFoundException('Bank transfer not found.');
+    if (txn.status !== 'pending' || txn.providerStatus !== 'otp') {
+      throw new BadRequestException(
+        'This transfer is not awaiting business-owner approval. Check its latest status before taking action.',
+      );
+    }
+    if (!txn.providerTransactionId) {
+      throw new BadRequestException(
+        'The Paystack transfer code is missing. The transfer cannot be approved safely.',
+      );
+    }
+
+    const before = await this.paystack(
+      `/transfer/verify/${encodeURIComponent(reference)}`,
+    );
+    const beforeData = before.payload?.data || {};
+    if (
+      !before.response.ok ||
+      !before.payload?.status ||
+      beforeData.reference !== reference ||
+      beforeData.transfer_code !== txn.providerTransactionId ||
+      beforeData.status !== 'otp'
+    ) {
+      return {
+        success: false,
+        status: 'pending',
+        message: 'Paystack approval status could not be confirmed. No approval was submitted.',
+      };
+    }
+
+    // OTP is sent only to Paystack and is never persisted, returned, or logged.
+    const finalized = await this.paystack('/transfer/finalize_transfer', {
+      method: 'POST',
+      body: JSON.stringify({
+        transfer_code: txn.providerTransactionId,
+        otp,
+      }),
+    });
+    if (!finalized.response.ok || !finalized.payload?.status) {
+      // A failed response may be an invalid OTP or a transport/provider issue.
+      // Keep the customer reservation pending; never refund or retry automatically.
+      throw new BadRequestException(
+        'Paystack did not accept the business approval code. Check the transfer status before trying again.',
+      );
+    }
+
+    const after = await this.paystack(
+      `/transfer/verify/${encodeURIComponent(reference)}`,
+    );
+    const data = after.payload?.data || {};
+    if (
+      !after.response.ok ||
+      !after.payload?.status ||
+      data.reference !== reference ||
+      data.transfer_code !== txn.providerTransactionId
+    ) {
+      return {
+        success: false,
+        status: 'pending',
+        message: 'Approval was submitted, but Paystack has not confirmed the final status. Do not resubmit the payout.',
+      };
+    }
+
+    const status = String(data.status || 'pending') as PaystackTransferStatus;
+    const normalized: PaystackTransferStatus = [
+      'success',
+      'failed',
+      'reversed',
+      'abandoned',
+      'blocked',
+      'rejected',
+      'otp',
+    ].includes(status)
+      ? status
+      : 'pending';
+
+    if (['success', ...TERMINAL_TRANSFER_FAILURES].includes(normalized)) {
+      const verified = await this.fetchVerifiedTerminalData(
+        reference,
+        normalized,
+        txn.providerTransactionId,
+      );
+      if (!verified) {
+        return {
+          success: false,
+          status: 'pending',
+          message: 'Paystack is confirming the transfer and provider fee. Do not resubmit.',
+        };
+      }
+      return this.settle(reference, normalized, verified);
+    }
+
+    const result = await this.settle(reference, normalized, {
+      transfer_code: txn.providerTransactionId,
+      ...(Number.isSafeInteger(data.id) ? { transfer_id: data.id } : {}),
+    });
+    return {
+      ...result,
+      approvedBy: adminId,
+    };
+  }
+
+  async verify(userId: string, reference: string) {
+    if (!process.env.PAYSTACK_SECRET_KEY) {
+      throw new ServiceUnavailableException(
+        'Paystack transfer verification is not configured.',
+      );
+    }
+    const txn = await this.prisma.transaction.findFirst({
+      where: { reference, userId, category: 'external_bank_transfer' },
+    });
+    if (!txn) throw new NotFoundException('Bank transfer not found.');
+    if (txn.status === 'completed')
+      return { success: true, status: 'completed' };
+    if (txn.status === 'failed') return { success: false, status: 'failed' };
+
+    const result = await this.paystack(
+      `/transfer/verify/${encodeURIComponent(reference)}`,
+    );
+    if (!result.response.ok || !result.payload?.status) {
+      return { success: false, status: txn.providerStatus || 'pending' };
+    }
+    const data = result.payload.data || {};
+    if (data.reference !== reference) {
+      return { success: false, status: 'provider_reference_mismatch' };
+    }
+    const status = String(data.status || 'pending') as PaystackTransferStatus;
+    const normalized: PaystackTransferStatus = [
+      'success',
+      'failed',
+      'reversed',
+      'abandoned',
+      'blocked',
+      'rejected',
+      'otp',
+    ].includes(status)
+      ? status
+      : 'pending';
+    const settled = await this.settle(reference, normalized, {
+      amount: data.amount,
+      currency: data.currency,
+      ...(data.transfer_code ? { transfer_code: data.transfer_code } : {}),
+      ...(Number.isSafeInteger(data.fee_charged)
+        ? { fee_charged: data.fee_charged }
+        : {}),
+      ...(Number.isSafeInteger(data.id) ? { transfer_id: data.id } : {}),
+    });
+    return { success: settled.status === 'completed', status: settled.status };
+  }
+}

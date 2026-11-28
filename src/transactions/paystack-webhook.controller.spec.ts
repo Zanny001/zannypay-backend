@@ -11,7 +11,15 @@ describe('PaystackWebhookController', () => {
       .fn()
       .mockResolvedValue({ success: true, status: 'completed' }),
   };
-  const controller = new PaystackWebhookController(transactionsService as any);
+  const paystackTransfers = {
+    handleWebhook: jest
+      .fn()
+      .mockResolvedValue({ success: true, status: 'completed' }),
+  };
+  const controller = new PaystackWebhookController(
+    transactionsService as any,
+    paystackTransfers as any,
+  );
   const response = {
     status: jest.fn().mockReturnThis(),
     send: jest.fn().mockReturnThis(),
@@ -60,6 +68,45 @@ describe('PaystackWebhookController', () => {
     );
     expect(response.status).toHaveBeenCalledWith(200);
     expect(response.send).toHaveBeenCalledWith('Event Acknowledged');
+  });
+
+  it('routes signed transfer lifecycle events to the payout service', async () => {
+    const secret = 'whsec_test-signing-secret';
+    process.env.PAYSTACK_WEBHOOK_SECRET = secret;
+    const payload = Buffer.from(
+      JSON.stringify({
+        event: 'transfer.success',
+        data: { reference: 'ZP-test', amount: 10000, currency: 'NGN' },
+      }),
+    );
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = crypto
+      .createHmac('sha512', secret)
+      .update(timestamp)
+      .update('.')
+      .update(payload)
+      .digest('hex');
+    await controller.handleWebhook(
+      {
+        rawBody: payload,
+        headers: {
+          'paystack-signature': `t=${timestamp},v1=whk_test-key:${signature}`,
+        },
+        body: {
+          event: 'transfer.success',
+          data: { reference: 'ZP-test', amount: 10000, currency: 'NGN' },
+        },
+      },
+      response as any,
+    );
+    expect(paystackTransfers.handleWebhook).toHaveBeenCalledWith(
+      'transfer.success',
+      {
+        reference: 'ZP-test',
+        amount: 10000,
+        currency: 'NGN',
+      },
+    );
   });
 
   it('rejects an invalid timestamped signature without applying the event', async () => {

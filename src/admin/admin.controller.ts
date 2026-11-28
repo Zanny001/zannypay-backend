@@ -10,6 +10,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AdminService } from './admin.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -25,6 +26,8 @@ import { KycDecisionDto } from './dto/kyc-decision.dto';
 import { UpdateDisputeDto } from './dto/update-dispute.dto';
 import { ReverseTransactionDto } from './dto/reverse-transaction.dto';
 import { toCsv } from '../common/csv.util';
+import { PaystackTransfersService } from '../transactions/paystack-transfers.service';
+import { FinalizePaystackTransferDto } from '../transactions/dto/finalize-paystack-transfer.dto';
 
 @Controller('admin')
 @UseGuards(
@@ -37,6 +40,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly auditLogService: AuditLogService,
+    private readonly paystackTransfers: PaystackTransfersService,
   ) {}
 
   // ---------- Admin account management (SUPER_ADMIN only) ----------
@@ -117,6 +121,65 @@ export class AdminController {
       dto.reason,
       req.ip,
     );
+  }
+
+  // Merchant/business-owner OTP is never collected by the customer app.
+  // This route requires admin IP policy, JWT, finance/super-admin role,
+  // mandatory admin 2FA and fresh step-up authentication.
+  @Roles('SUPER_ADMIN', 'FINANCE_OFFICER')
+  @Post('paystack/transfers/:reference/finalize')
+  @UseGuards(StepUpGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  async finalizePaystackTransfer(
+    @Req() req,
+    @Param('reference') reference: string,
+    @Body() dto: FinalizePaystackTransferDto,
+  ) {
+    // Record the privileged approval attempt before contacting Paystack.
+    // Never include the business OTP, step-up code, or request body in audit data.
+    await this.auditLogService.record({
+      adminId: req.user.adminId,
+      action: 'PAYSTACK_TRANSFER_BUSINESS_OTP_ATTEMPTED',
+      targetType: 'TRANSACTION',
+      targetId: reference,
+      metadata: { outcome: 'submitted' },
+      ipAddress: req.ip,
+    });
+
+    let result;
+    try {
+      result = await this.paystackTransfers.finalizeBusinessOtp(
+        reference,
+        dto.otp,
+        req.user.adminId,
+      );
+    } catch (error) {
+      await this.auditLogService.record({
+        adminId: req.user.adminId,
+        action: 'PAYSTACK_TRANSFER_BUSINESS_OTP_NOT_CONFIRMED',
+        targetType: 'TRANSACTION',
+        targetId: reference,
+        metadata: { outcome: 'rejected_or_uncertain' },
+        ipAddress: req.ip,
+      });
+      throw error;
+    }
+
+    await this.auditLogService.record({
+      adminId: req.user.adminId,
+      action: result.success
+        ? 'PAYSTACK_TRANSFER_BUSINESS_OTP_FINALIZED'
+        : 'PAYSTACK_TRANSFER_BUSINESS_OTP_NOT_CONFIRMED',
+      targetType: 'TRANSACTION',
+      targetId: reference,
+      metadata: {
+        status: result.status,
+        success: result.success,
+        outcome: result.success ? 'confirmed' : 'pending_or_unconfirmed',
+      },
+      ipAddress: req.ip,
+    });
+    return result;
   }
 
   // ---------- Transactions (any admin can view; flag/reverse restricted

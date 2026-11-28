@@ -3,6 +3,7 @@ import { TransactionsController } from './transactions.controller';
 import { TransactionsService } from './transactions.service';
 import { VtpassClient } from './vtpass.client';
 import { VtpassPaymentsService } from './vtpass-payments.service';
+import { PaystackTransfersService } from './paystack-transfers.service';
 
 describe('TransactionsController', () => {
   let controller: TransactionsController;
@@ -26,6 +27,10 @@ describe('TransactionsController', () => {
         {
           provide: VtpassPaymentsService,
           useValue: { purchase: jest.fn(), getTransaction: jest.fn() },
+        },
+        {
+          provide: PaystackTransfersService,
+          useValue: { transfer: jest.fn(), verify: jest.fn() },
         },
       ],
     }).compile();

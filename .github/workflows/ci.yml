@@ -1,10 +1,11 @@
+# This PR workflow also validates the protected Paystack business-OTP approval path.
 name: Backend hotfix CI
 
 on:
   push:
-    branches: ['hotfix/**']
+    branches: ['hotfix/**', 'feat/paystack-external-payouts']
   pull_request:
-    branches: [main]
+    branches: [main, 'feat/web-session-proxy']
 
 jobs:
   verify:
@@ -18,5 +19,5 @@ jobs:
       - run: npm ci
       - run: npm test -- --runInBand
       - run: npm run build
-      - run: npx prettier --write src/main.ts src/transactions/paystack-signature.spec.ts src/transactions/paystack-signature.ts src/transactions/paystack-webhook.controller.ts src/transactions/paystack-webhook.controller.spec.ts src/transactions/dto/fund.dto.ts src/transactions/transactions.service.spec.ts src/transactions/transactions.service.ts src/transactions/transactions.controller.ts src/transactions/transactions.controller.spec.ts src/transactions/transactions.module.ts src/transactions/vtpass.client.ts src/transactions/vtpass.client.spec.ts src/transactions/vtpass-payments.service.ts src/transactions/vtpass-payments.service.spec.ts src/transactions/dto/vtpass-customer-verify.dto.ts src/transactions/dto/vtpass-bill-purchase.dto.ts src/integration-status/integration-status.service.ts test/mocks/nest-schedule.ts
+      - run: npx prettier --write src/main.ts src/transactions/paystack-signature.spec.ts src/transactions/paystack-signature.ts src/transactions/paystack-webhook.controller.ts src/transactions/paystack-webhook.controller.spec.ts src/transactions/dto/fund.dto.ts src/transactions/dto/finalize-paystack-transfer.dto.ts src/transactions/transactions.service.spec.ts src/transactions/transactions.service.ts src/transactions/transactions.controller.ts src/transactions/transactions.controller.spec.ts src/transactions/transactions.module.ts src/admin/admin.controller.ts src/admin/admin.controller.spec.ts src/admin/admin.service.spec.ts src/admin/admin.module.ts src/transactions/paystack-transfers.service.ts src/transactions/paystack-transfers.service.spec.ts src/transactions/paystack-balance-reconciliation.service.ts src/transactions/paystack-balance-reconciliation.service.spec.ts src/transactions/vtpass.client.ts src/transactions/vtpass.client.spec.ts src/transactions/vtpass-payments.service.ts src/transactions/vtpass-payments.service.spec.ts src/transactions/dto/vtpass-customer-verify.dto.ts src/transactions/dto/vtpass-bill-purchase.dto.ts src/integration-status/integration-status.service.ts test/mocks/nest-schedule.ts
       - run: npm run lint
