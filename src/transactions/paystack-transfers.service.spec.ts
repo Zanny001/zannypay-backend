@@ -12,25 +12,33 @@ describe('PaystackTransfersService', () => {
 
   beforeEach(() => {
     prisma = {
-      $transaction: jest.fn(async (callback) => callback({
-        transaction: {
-          findUnique: jest.fn(),
-          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-          create: jest.fn().mockResolvedValue({ id: 'reversal-1' }),
-        },
-        wallet: { update: jest.fn() },
-      })),
+      $transaction: jest.fn(async (callback) =>
+        callback({
+          transaction: {
+            findUnique: jest.fn(),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            create: jest.fn().mockResolvedValue({ id: 'reversal-1' }),
+          },
+          wallet: { update: jest.fn() },
+        }),
+      ),
     };
     ledger = {
-      getOrCreateSystemAccount: jest.fn().mockResolvedValue({ id: 'system-account' }),
+      getOrCreateSystemAccount: jest
+        .fn()
+        .mockResolvedValue({ id: 'system-account' }),
       reverseJournal: jest.fn(),
       postJournal: jest.fn(),
     };
-    service = new PaystackTransfersService(prisma as PrismaService, ledger as LedgerService);
+    service = new PaystackTransfersService(
+      prisma as PrismaService,
+      ledger as LedgerService,
+    );
   });
 
   afterAll(() => {
-    if (originalFlag === undefined) delete process.env.PAYSTACK_TRANSFERS_ENABLED;
+    if (originalFlag === undefined)
+      delete process.env.PAYSTACK_TRANSFERS_ENABLED;
     else process.env.PAYSTACK_TRANSFERS_ENABLED = originalFlag;
     if (originalSecret === undefined) delete process.env.PAYSTACK_SECRET_KEY;
     else process.env.PAYSTACK_SECRET_KEY = originalSecret;
@@ -39,14 +47,16 @@ describe('PaystackTransfersService', () => {
   it('keeps payouts disabled unless the explicit feature flag is enabled', async () => {
     delete process.env.PAYSTACK_TRANSFERS_ENABLED;
     process.env.PAYSTACK_SECRET_KEY = 'sk_test_only';
-    await expect(service.transfer('user-1', {
-      recipientAccount: '0123456789',
-      bank: 'Test Bank',
-      bankCode: '058',
-      amount: 1000,
-      pin: '1234',
-      idempotencyKey: 'test-key-123',
-    } as any)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(
+      service.transfer('user-1', {
+        recipientAccount: '0123456789',
+        bank: 'Test Bank',
+        bankCode: '058',
+        amount: 1000,
+        pin: '1234',
+        idempotencyKey: 'test-key-123',
+      } as any),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
@@ -73,10 +83,15 @@ describe('PaystackTransfersService', () => {
     });
 
     expect(result).toEqual({ success: true, status: 'completed' });
-    expect(tx.transaction.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'txn-1', status: 'pending' },
-      data: expect.objectContaining({ status: 'completed', providerStatus: 'success' }),
-    }));
+    expect(tx.transaction.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'txn-1', status: 'pending' },
+        data: expect.objectContaining({
+          status: 'completed',
+          providerStatus: 'success',
+        }),
+      }),
+    );
     expect(ledger.postJournal).toHaveBeenCalledTimes(1);
   });
 
@@ -168,7 +183,10 @@ describe('PaystackTransfersService', () => {
       currency: 'NGN',
     });
 
-    expect(result).toEqual({ success: false, status: 'provider_amount_mismatch' });
+    expect(result).toEqual({
+      success: false,
+      status: 'provider_amount_mismatch',
+    });
     expect(tx.transaction.updateMany).not.toHaveBeenCalled();
     expect(ledger.postJournal).not.toHaveBeenCalled();
   });
@@ -177,36 +195,37 @@ describe('PaystackTransfersService', () => {
     ['missing amount', { currency: 'NGN' }],
     ['missing currency', { amount: 8000 }],
     ['missing provider data', undefined],
-  ])('fails closed for terminal payout status with %s', async (_label, providerData) => {
-    const tx = {
-      transaction: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: 'txn-missing-provider-fields',
-          userId: 'user-5',
-          category: 'external_bank_transfer',
-          type: 'debit',
-          status: 'pending',
-          amount: 80,
-        }),
-        updateMany: jest.fn(),
-      },
-    };
-    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+  ])(
+    'fails closed for terminal payout status with %s',
+    async (_label, providerData) => {
+      const tx = {
+        transaction: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'txn-missing-provider-fields',
+            userId: 'user-5',
+            category: 'external_bank_transfer',
+            type: 'debit',
+            status: 'pending',
+            amount: 80,
+          }),
+          updateMany: jest.fn(),
+        },
+      };
+      prisma.$transaction.mockImplementation(async (callback) => callback(tx));
 
-    const result = await (service as any).settle(
-      'zp-missing-provider-fields',
-      'success',
-      providerData,
-    );
+      const result = await (service as any).settle(
+        'zp-missing-provider-fields',
+        'success',
+        providerData,
+      );
 
-    expect(result).toEqual({
-      success: false,
-      status: 'provider_amount_mismatch',
-    });
-    expect(tx.transaction.updateMany).not.toHaveBeenCalled();
-    expect(ledger.postJournal).not.toHaveBeenCalled();
-    expect(tx.wallet?.update).toBeUndefined();
-  });
-
-
+      expect(result).toEqual({
+        success: false,
+        status: 'provider_amount_mismatch',
+      });
+      expect(tx.transaction.updateMany).not.toHaveBeenCalled();
+      expect(ledger.postJournal).not.toHaveBeenCalled();
+      expect(tx.wallet?.update).toBeUndefined();
+    },
+  );
 });

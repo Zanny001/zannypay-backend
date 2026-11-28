@@ -13,7 +13,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { TransferDto } from './dto/transfer.dto';
 
-type PaystackTransferStatus = 'pending' | 'otp' | 'success' | 'failed' | 'reversed';
+type PaystackTransferStatus =
+  'pending' | 'otp' | 'success' | 'failed' | 'reversed';
 
 @Injectable()
 export class PaystackTransfersService {
@@ -65,7 +66,11 @@ export class PaystackTransfersService {
   private async settle(
     reference: string,
     status: PaystackTransferStatus,
-    providerData?: { amount?: number; currency?: string; transfer_code?: string },
+    providerData?: {
+      amount?: number;
+      currency?: string;
+      transfer_code?: string;
+    },
   ) {
     return this.prisma.$transaction(async (tx) => {
       const txn = await tx.transaction.findUnique({ where: { reference } });
@@ -92,11 +97,19 @@ export class PaystackTransfersService {
         }
       }
 
-      if (txn.status === 'completed' && status !== 'failed' && status !== 'reversed') {
+      if (
+        txn.status === 'completed' &&
+        status !== 'failed' &&
+        status !== 'reversed'
+      ) {
         return { success: true, status: 'completed', alreadyProcessed: true };
       }
       if (txn.status === 'failed') {
-        return { success: status === 'failed' || status === 'reversed', status: 'failed', alreadyProcessed: true };
+        return {
+          success: status === 'failed' || status === 'reversed',
+          status: 'failed',
+          alreadyProcessed: true,
+        };
       }
       if (txn.status !== 'pending' && txn.status !== 'completed') {
         return { success: false, status: txn.status };
@@ -142,10 +155,21 @@ export class PaystackTransfersService {
         await this.ledger.postJournal(
           tx,
           [
-            { accountId: payoutClearing.id, direction: LedgerDirection.DEBIT, amount: Number(txn.amount) },
-            { accountId: paystackClearing.id, direction: LedgerDirection.CREDIT, amount: Number(txn.amount) },
+            {
+              accountId: payoutClearing.id,
+              direction: LedgerDirection.DEBIT,
+              amount: Number(txn.amount),
+            },
+            {
+              accountId: paystackClearing.id,
+              direction: LedgerDirection.CREDIT,
+              amount: Number(txn.amount),
+            },
           ],
-          { transactionId: txn.id, memo: 'Paystack payout confirmed — reduce payout float' },
+          {
+            transactionId: txn.id,
+            memo: 'Paystack payout confirmed — reduce payout float',
+          },
         );
         return { success: true, status: 'completed' };
       }
@@ -203,7 +227,9 @@ export class PaystackTransfersService {
     const amount = Number(dto.amount);
     const amountInKobo = Math.round(amount * 100);
     if (!/^\d{10}$/.test(accountNumber)) {
-      throw new BadRequestException('Enter a valid 10-digit bank account number.');
+      throw new BadRequestException(
+        'Enter a valid 10-digit bank account number.',
+      );
     }
     if (!/^\d{2,8}$/.test(bankCode)) {
       throw new BadRequestException('Select a valid destination bank.');
@@ -215,11 +241,15 @@ export class PaystackTransfersService {
       !Number.isSafeInteger(amountInKobo) ||
       Math.abs(amountInKobo / 100 - amount) > 0.000001
     ) {
-      throw new BadRequestException('Enter a valid transfer amount with up to two decimal places.');
+      throw new BadRequestException(
+        'Enter a valid transfer amount with up to two decimal places.',
+      );
     }
 
     if (!dto.idempotencyKey || dto.idempotencyKey.trim().length < 8) {
-      throw new BadRequestException('A unique idempotency key is required for bank transfers. Please update the app and try again.');
+      throw new BadRequestException(
+        'A unique idempotency key is required for bank transfers. Please update the app and try again.',
+      );
     }
 
     if (dto.idempotencyKey) {
@@ -234,7 +264,9 @@ export class PaystackTransfersService {
           existing.recipientAccount !== accountNumber ||
           existing.subtitle !== `${bankCode} ••••${accountNumber.slice(-4)}`
         ) {
-          throw new BadRequestException('This transfer key is already associated with another request.');
+          throw new BadRequestException(
+            'This transfer key is already associated with another request.',
+          );
         }
         return {
           success: existing.status === 'completed',
@@ -252,7 +284,9 @@ export class PaystackTransfersService {
     });
     if (!sender) throw new NotFoundException('Sender account not found.');
     if (sender.isFrozen) {
-      throw new ForbiddenException('Your account is currently restricted. Please contact support.');
+      throw new ForbiddenException(
+        'Your account is currently restricted. Please contact support.',
+      );
     }
     if (!(await bcrypt.compare(dto.pin, sender.pin))) {
       throw new UnauthorizedException('Incorrect PIN.');
@@ -266,15 +300,22 @@ export class PaystackTransfersService {
     const resolve = await this.paystack(
       `/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`,
     );
-    const resolvedName = String(resolve.payload?.data?.account_name || '').trim();
+    const resolvedName = String(
+      resolve.payload?.data?.account_name || '',
+    ).trim();
     if (!resolve.response.ok || !resolve.payload?.status || !resolvedName) {
       throw new BadRequestException(
-        resolve.payload?.message || 'We could not verify this account at the selected bank.',
+        resolve.payload?.message ||
+          'We could not verify this account at the selected bank.',
       );
     }
-    const resolvedAccount = String(resolve.payload.data.account_number || accountNumber);
+    const resolvedAccount = String(
+      resolve.payload.data.account_number || accountNumber,
+    );
     if (resolvedAccount !== accountNumber) {
-      throw new BadRequestException('The verified account number does not match the entered account number.');
+      throw new BadRequestException(
+        'The verified account number does not match the entered account number.',
+      );
     }
 
     const recipient = await this.paystack('/transferrecipient', {
@@ -288,9 +329,14 @@ export class PaystackTransfersService {
       }),
     });
     const recipientCode = recipient.payload?.data?.recipient_code;
-    if (!recipient.response.ok || !recipient.payload?.status || typeof recipientCode !== 'string') {
+    if (
+      !recipient.response.ok ||
+      !recipient.payload?.status ||
+      typeof recipientCode !== 'string'
+    ) {
       throw new ServiceUnavailableException(
-        recipient.payload?.message || 'Paystack could not prepare this bank recipient.',
+        recipient.payload?.message ||
+          'Paystack could not prepare this bank recipient.',
       );
     }
 
@@ -302,9 +348,12 @@ export class PaystackTransfersService {
           where: { id: userId },
           include: { wallet: true },
         });
-        if (!freshSender) throw new NotFoundException('Sender account not found.');
+        if (!freshSender)
+          throw new NotFoundException('Sender account not found.');
         if (freshSender.isFrozen) {
-          throw new ForbiddenException('Your account is currently restricted. Please contact support.');
+          throw new ForbiddenException(
+            'Your account is currently restricted. Please contact support.',
+          );
         }
         if (!(await bcrypt.compare(dto.pin, freshSender.pin))) {
           throw new UnauthorizedException('Incorrect PIN.');
@@ -314,7 +363,8 @@ export class PaystackTransfersService {
           where: { userId, balance: { gte: amount } },
           data: { balance: { decrement: amount } },
         });
-        if (debit.count !== 1) throw new BadRequestException('Insufficient funds.');
+        if (debit.count !== 1)
+          throw new BadRequestException('Insufficient funds.');
 
         const transaction = await tx.transaction.create({
           data: {
@@ -328,7 +378,9 @@ export class PaystackTransfersService {
             recipientAccount: accountNumber,
             status: 'pending',
             reference,
-            ...(dto.idempotencyKey ? { idempotencyKey: dto.idempotencyKey } : {}),
+            ...(dto.idempotencyKey
+              ? { idempotencyKey: dto.idempotencyKey }
+              : {}),
             providerStatus: 'initiating',
           },
         });
@@ -345,10 +397,21 @@ export class PaystackTransfersService {
         await this.ledger.postJournal(
           tx,
           [
-            { accountId: walletAccount.id, direction: LedgerDirection.DEBIT, amount },
-            { accountId: payoutClearing.id, direction: LedgerDirection.CREDIT, amount },
+            {
+              accountId: walletAccount.id,
+              direction: LedgerDirection.DEBIT,
+              amount,
+            },
+            {
+              accountId: payoutClearing.id,
+              direction: LedgerDirection.CREDIT,
+              amount,
+            },
           ],
-          { transactionId: transaction.id, memo: `External bank transfer to ${resolvedName}` },
+          {
+            transactionId: transaction.id,
+            memo: `External bank transfer to ${resolvedName}`,
+          },
         );
         return transaction;
       });
@@ -380,7 +443,9 @@ export class PaystackTransfersService {
           recipient: recipientCode,
           reference,
           currency: 'NGN',
-          reason: String(dto.note || `ZannyPay transfer to ${resolvedName}`).slice(0, 100),
+          reason: String(
+            dto.note || `ZannyPay transfer to ${resolvedName}`,
+          ).slice(0, 100),
         }),
       });
     } catch {
@@ -399,14 +464,18 @@ export class PaystackTransfersService {
     if (!initiated.response.ok || !initiated.payload?.status) {
       // A 5xx/429 response can still hide an accepted provider instruction.
       // Preserve the debit as pending until verify/webhook gives a final answer.
-      if (initiated.response.status >= 500 || initiated.response.status === 429) {
+      if (
+        initiated.response.status >= 500 ||
+        initiated.response.status === 429
+      ) {
         return {
           success: false,
           status: 'pending',
           transactionId: txn.id,
           reference,
           recipientName: resolvedName,
-          message: 'Paystack is still confirming this transfer. Do not submit it again.',
+          message:
+            'Paystack is still confirming this transfer. Do not submit it again.',
         };
       }
       // A definitive provider-side validation/funding rejection is safe to refund.
@@ -418,19 +487,30 @@ export class PaystackTransfersService {
         currency: 'NGN',
       });
       throw new BadRequestException(
-        initiated.payload?.message || 'Paystack rejected this transfer instruction.',
+        initiated.payload?.message ||
+          'Paystack rejected this transfer instruction.',
       );
     }
 
-    const providerStatus = String(initiated.payload?.data?.status || 'pending') as PaystackTransferStatus;
+    const providerStatus = String(
+      initiated.payload?.data?.status || 'pending',
+    ) as PaystackTransferStatus;
     const transferCode = initiated.payload?.data?.transfer_code;
-    const acceptedStatus: PaystackTransferStatus =
-      ['success', 'failed', 'reversed', 'otp'].includes(providerStatus)
-        ? providerStatus
-        : 'pending';
+    const acceptedStatus: PaystackTransferStatus = [
+      'success',
+      'failed',
+      'reversed',
+      'otp',
+    ].includes(providerStatus)
+      ? providerStatus
+      : 'pending';
     const settled = await this.settle(reference, acceptedStatus, {
-      ...(Number.isSafeInteger(initiated.payload?.data?.amount) ? { amount: initiated.payload.data.amount } : {}),
-      ...(initiated.payload?.data?.currency ? { currency: initiated.payload.data.currency } : {}),
+      ...(Number.isSafeInteger(initiated.payload?.data?.amount)
+        ? { amount: initiated.payload.data.amount }
+        : {}),
+      ...(initiated.payload?.data?.currency
+        ? { currency: initiated.payload.data.currency }
+        : {}),
       ...(transferCode ? { transfer_code: String(transferCode) } : {}),
     });
     return {
@@ -450,9 +530,15 @@ export class PaystackTransfersService {
 
   async handleWebhook(
     event: string,
-    data: { reference?: string; amount?: number; currency?: string; transfer_code?: string },
+    data: {
+      reference?: string;
+      amount?: number;
+      currency?: string;
+      transfer_code?: string;
+    },
   ) {
-    if (!data?.reference) return { success: false, status: 'missing_reference' };
+    if (!data?.reference)
+      return { success: false, status: 'missing_reference' };
     const eventStatus: Record<string, PaystackTransferStatus> = {
       'transfer.success': 'success',
       'transfer.failed': 'failed',
@@ -466,13 +552,16 @@ export class PaystackTransfersService {
 
   async verify(userId: string, reference: string) {
     if (!process.env.PAYSTACK_SECRET_KEY) {
-      throw new ServiceUnavailableException('Paystack transfer verification is not configured.');
+      throw new ServiceUnavailableException(
+        'Paystack transfer verification is not configured.',
+      );
     }
     const txn = await this.prisma.transaction.findFirst({
       where: { reference, userId, category: 'external_bank_transfer' },
     });
     if (!txn) throw new NotFoundException('Bank transfer not found.');
-    if (txn.status === 'completed') return { success: true, status: 'completed' };
+    if (txn.status === 'completed')
+      return { success: true, status: 'completed' };
     if (txn.status === 'failed') return { success: false, status: 'failed' };
 
     const result = await this.paystack(
@@ -486,8 +575,14 @@ export class PaystackTransfersService {
       return { success: false, status: 'provider_reference_mismatch' };
     }
     const status = String(data.status || 'pending') as PaystackTransferStatus;
-    const normalized: PaystackTransferStatus =
-      ['success', 'failed', 'reversed', 'otp'].includes(status) ? status : 'pending';
+    const normalized: PaystackTransferStatus = [
+      'success',
+      'failed',
+      'reversed',
+      'otp',
+    ].includes(status)
+      ? status
+      : 'pending';
     const settled = await this.settle(reference, normalized, {
       amount: data.amount,
       currency: data.currency,

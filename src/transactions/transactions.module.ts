@@ -11,6 +11,11 @@ import { PaystackTransfersService } from './paystack-transfers.service';
 @Module({
   imports: [FraudModule, BeneficiariesModule],
   controllers: [TransactionsController, PaystackWebhookController],
-  providers: [TransactionsService, VtpassClient, VtpassPaymentsService, PaystackTransfersService],
+  providers: [
+    TransactionsService,
+    VtpassClient,
+    VtpassPaymentsService,
+    PaystackTransfersService,
+  ],
 })
 export class TransactionsModule {}
