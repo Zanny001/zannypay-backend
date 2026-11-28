@@ -156,6 +156,7 @@ enum LedgerAccountType {
   SYSTEM_OPENING_BALANCE_EQUITY // the counter-account for the one-time opening-balance journal that brings a pre-existing Wallet.balance into the ledger at go-live — see LedgerService.seedOpeningBalances
   SYSTEM_ADMIN_ADJUSTMENT      // counter-account for AdminService.reverseTransaction — see the comment there for why a reversal is posted as a one-sided adjustment against this account rather than a symmetric invert of the original journal
   SYSTEM_INTEREST_EXPENSE      // the cost of interest paid out to depositors — debited when SavingsService's daily accrual credits a customer's CUSTOMER_SAVINGS account, the standard accounting treatment for interest expense
+  SYSTEM_PROCESSOR_FEE_EXPENSE   // fees charged by external payout/payment processors
 }
 
 enum LedgerDirection {
@@ -491,6 +492,7 @@ model Transaction {
   providerRequestId String? @unique
   providerTransactionId String?
   providerStatus String?
+  providerFee Decimal? @db.Decimal(10, 2) // actual provider fee charged, stored in NGN
   providerLastCheckedAt DateTime?
   providerIdentifier String?
   providerServiceId String?
