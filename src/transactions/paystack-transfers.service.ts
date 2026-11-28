@@ -112,6 +112,7 @@ export class PaystackTransfersService {
       currency?: string;
       transfer_code?: string;
       fee_charged?: number;
+      transfer_id?: number | string;
     },
   ) {
     return this.prisma.$transaction(async (tx) => {
@@ -170,6 +171,9 @@ export class PaystackTransfersService {
             providerLastCheckedAt: new Date(),
             ...(providerData?.transfer_code
               ? { providerTransactionId: providerData.transfer_code }
+              : {}),
+            ...(providerData?.transfer_id != null
+              ? { providerTransferId: String(providerData.transfer_id) }
               : {}),
           },
         });
@@ -610,6 +614,7 @@ export class PaystackTransfersService {
       currency?: string;
       transfer_code?: string;
       fee_charged?: number;
+      transfer_id?: number | string;
     } = {
       ...(Number.isSafeInteger(initiated.payload?.data?.amount)
         ? { amount: initiated.payload.data.amount }
@@ -618,6 +623,9 @@ export class PaystackTransfersService {
         ? { currency: initiated.payload.data.currency }
         : {}),
       ...(transferCode ? { transfer_code: String(transferCode) } : {}),
+      ...(Number.isSafeInteger(initiated.payload?.data?.id)
+        ? { transfer_id: initiated.payload.data.id }
+        : {}),
       ...(Number.isSafeInteger(initiated.payload?.data?.fee_charged)
         ? { fee_charged: initiated.payload.data.fee_charged }
         : {}),
@@ -684,6 +692,7 @@ export class PaystackTransfersService {
       amount: data.amount,
       currency: data.currency,
       fee_charged: data.fee_charged,
+      ...(Number.isSafeInteger(data.id) ? { transfer_id: data.id } : {}),
       ...(data.transfer_code || transferCode
         ? { transfer_code: data.transfer_code || transferCode }
         : {}),
