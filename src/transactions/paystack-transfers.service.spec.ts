@@ -128,10 +128,18 @@ describe('PaystackTransfersService', () => {
         data: expect.objectContaining({
           status: 'completed',
           providerStatus: 'success',
+          providerFee: 2.5,
         }),
       }),
     );
     expect(ledger.postJournal).toHaveBeenCalledTimes(1);
+    const postedLines = ledger.postJournal.mock.calls[0][1];
+    expect(postedLines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ direction: 'DEBIT', amount: 2.5 }),
+        expect.objectContaining({ direction: 'CREDIT', amount: 102.5 }),
+      ]),
+    );
   });
 
   it('refunds a definitively failed payout and reverses its ledger journal', async () => {
@@ -169,6 +177,51 @@ describe('PaystackTransfersService', () => {
       'txn-2',
       'reversal-2',
       expect.stringContaining('wallet refund'),
+    );
+  });
+
+  it('retains the provider fee when a previously completed payout is reversed', async () => {
+    const tx = {
+      transaction: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'txn-reversed',
+          userId: 'user-reversed',
+          category: 'external_bank_transfer',
+          type: 'debit',
+          status: 'completed',
+          amount: 100,
+          providerFee: 2.5,
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        create: jest.fn().mockResolvedValue({ id: 'reversal-fee-1' }),
+      },
+      wallet: { update: jest.fn() },
+    };
+    prisma.$transaction.mockImplementation(async (callback) => callback(tx));
+
+    const result = await (service as any).settle('zp-reversed', 'reversed', {
+      amount: 10000,
+      currency: 'NGN',
+      fee_charged: 250,
+    });
+
+    expect(result).toEqual({ success: true, status: 'failed', refunded: true });
+    expect(ledger.reverseJournal).toHaveBeenCalledWith(
+      tx,
+      'txn-reversed',
+      'reversal-fee-1',
+      expect.stringContaining('wallet refund'),
+    );
+    expect(ledger.postJournal).toHaveBeenCalledWith(
+      tx,
+      expect.arrayContaining([
+        expect.objectContaining({ direction: 'DEBIT', amount: 2.5 }),
+        expect.objectContaining({ direction: 'CREDIT', amount: 2.5 }),
+      ]),
+      expect.objectContaining({
+        transactionId: 'reversal-fee-1',
+        memo: expect.stringContaining('Retain Paystack provider fee'),
+      }),
     );
   });
 
