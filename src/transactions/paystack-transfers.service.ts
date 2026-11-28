@@ -623,7 +623,7 @@ export class PaystackTransfersService {
         : {}),
     };
     if (
-      ['success', 'failed', 'reversed'].includes(acceptedStatus) &&
+      ['success', ...TERMINAL_TRANSFER_FAILURES].includes(acceptedStatus) &&
       !Number.isSafeInteger(terminalData.fee_charged)
     ) {
       const verified = await this.fetchVerifiedTerminalData(
