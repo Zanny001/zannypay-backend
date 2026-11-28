@@ -19,7 +19,7 @@ The protected admin endpoint is:
 
 The request body contains `otp` plus the admin step-up field required by the existing `StepUpGuard` (`stepUpCode`). Access is restricted to `SUPER_ADMIN` and `FINANCE_OFFICER`, requires enabled admin 2FA, fresh step-up TOTP, the existing admin IP policy, and is rate-limited to five requests per minute.
 
-The OTP is forwarded directly to Paystack and is not persisted, logged, or returned. After submitting it, the service re-queries Paystack before updating ZannyPay transaction state. If the provider result is uncertain, the customer reservation remains pending; never initiate a second payout.
+The OTP is forwarded directly to Paystack and is not persisted, logged, or returned. The admin audit trail records the approval attempt and whether the result was confirmed, rejected, or uncertain; it stores only the transfer reference, admin identity, outcome and status—not the OTP or step-up code. After submitting it, the service re-queries Paystack before updating ZannyPay transaction state. If the provider result is uncertain, the customer reservation remains pending; never initiate a second payout.
 
 ## Balance-ledger reconciliation
 
