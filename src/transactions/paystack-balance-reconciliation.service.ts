@@ -72,7 +72,7 @@ export class PaystackBalanceReconciliationService {
           })
         : [];
       const transactionByProviderId = new Map(
-        transactions.map((transaction) => [transaction.providerTransferId!, transaction.id]),
+        transactions.map((transaction) => [transaction.providerTransferId, transaction.id]),
       );
 
       const records = rows.map((row) => {
