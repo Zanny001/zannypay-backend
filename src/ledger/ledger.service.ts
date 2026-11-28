@@ -22,6 +22,7 @@ const SYSTEM_ACCOUNT_IDS: Partial<Record<LedgerAccountType, string>> = {
     'sysacct-opening-balance-equity',
   [LedgerAccountType.SYSTEM_ADMIN_ADJUSTMENT]: 'sysacct-admin-adjustment',
   [LedgerAccountType.SYSTEM_INTEREST_EXPENSE]: 'sysacct-interest-expense',
+  [LedgerAccountType.SYSTEM_PROCESSOR_FEE_EXPENSE]: 'sysacct-processor-fee-expense',
 };
 
 export interface JournalLine {
