@@ -29,12 +29,13 @@ This process does not post accounting journals, modify customer wallet balances,
 
 ## Required pre-live validation
 
-1. Run Paystack test-mode transfer initiation with OTP required.
-2. Approve through the protected admin endpoint using a finance/super-admin account with 2FA and step-up authentication.
-3. Verify pending, success, failed, abandoned, blocked, rejected and reversed states.
-4. Exercise duplicate webhooks, delayed webhooks, network timeouts and repeated status verification.
-5. Reconcile principal, `fee_charged`, separate stamp duty and other business-balance movements to the Paystack balance history.
-6. Confirm available balance, business transfer approvals and the merchant's applicable fee/tax treatment.
-7. Keep live feature flags off until the release has been reviewed and explicitly approved.
+1. Use the Paystack test-mode transfer fixture (Zenith Bank account `1000000001`, bank code `057`) to validate account resolution, recipient creation, transfer initiation and final status. Paystack's current getting-started guide says standard test transfers complete immediately.
+2. Exercise the OTP-required provider response using the controlled mocked Paystack responses in the backend tests. If Paystack explicitly enables OTP challenges for the test integration, also run the protected admin approval flow end-to-end; do not assume the standard test transfer will produce an OTP.
+3. Approve a mocked OTP-pending transfer through the protected admin dashboard/API using a finance/super-admin account with mandatory 2FA and fresh step-up authentication.
+4. Verify pending, success, failed, abandoned, blocked, rejected and reversed states through provider fixtures/webhooks and confirm the resulting wallet and ledger movements.
+5. Exercise duplicate webhooks, delayed webhooks, network timeouts and repeated status verification.
+6. Reconcile principal, `fee_charged`, separate stamp duty and other business-balance movements to the Paystack balance history.
+7. Confirm available balance, business transfer approvals and the merchant's applicable fee/tax treatment.
+8. Keep live feature flags off until the release has been reviewed and explicitly approved.
 
 No production deployment, production migration, or live money movement is part of this PR.
